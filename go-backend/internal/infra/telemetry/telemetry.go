@@ -8,7 +8,7 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
-	"go.opentelemetry.io/otel/propagation" // Добавлено
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.24.0"
@@ -34,10 +34,11 @@ func New(ctx context.Context, cfg *config.Config, logger *zap.SugaredLogger) (*T
 	}
 
 	// 2. Define Resource metadata
+	// FIX: We remove semconv.SchemaURL from NewWithAttributes to avoid version conflict
 	res, err := resource.Merge(
 		resource.Default(),
 		resource.NewWithAttributes(
-			semconv.SchemaURL,
+			"", // Leave schema URL empty here to prevent "conflicting Schema URL" error
 			semconv.ServiceName(cfg.App.Name),
 			semconv.ServiceVersion(cfg.App.Version),
 			semconv.DeploymentEnvironment(cfg.Env),
@@ -51,14 +52,12 @@ func New(ctx context.Context, cfg *config.Config, logger *zap.SugaredLogger) (*T
 	tp := sdktrace.NewTracerProvider(
 		sdktrace.WithBatcher(exporter),
 		sdktrace.WithResource(res),
-		// Sample everything in dev, or use cfg.Observability.SampleRate
 		sdktrace.WithSampler(sdktrace.AlwaysSample()),
 	)
 
 	// 4. Set Global Providers
 	otel.SetTracerProvider(tp)
 
-	// CRITICAL: Set the propagator to allow cross-service tracing (Go -> Python)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
 		propagation.Baggage{},

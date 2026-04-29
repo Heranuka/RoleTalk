@@ -1,24 +1,20 @@
-// Package config provides application configuration loading and validation.
-// It reads configuration from YAML files, environment variables, and defaults,
-// and exposes a fully populated Config struct for use across the application.
+// Package config handles environment-specific configuration loading.
 package config
 
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/spf13/viper"
 )
 
-// ErrMissingEnvVar is returned when a required environment variable is not set.
 var ErrMissingEnvVar = errors.New("missing required environment variable")
 
-// Config holds all application configuration parameters.
 type Config struct {
-	Env string `mapstructure:"env"`
-
+	Env           string        `mapstructure:"env"`
 	App           App           `mapstructure:"app"`
 	HTTP          HTTP          `mapstructure:"http"`
 	Observability Observability `mapstructure:"observability"`
@@ -33,13 +29,11 @@ type Config struct {
 	Logging       Logging       `mapstructure:"logging"`
 }
 
-// App contains basic application metadata.
 type App struct {
 	Name    string `mapstructure:"name"`
 	Version string `mapstructure:"version"`
 }
 
-// HTTP contains settings for the HTTP server.
 type HTTP struct {
 	Port            string        `mapstructure:"port"`
 	ReadTimeout     time.Duration `mapstructure:"read_timeout"`
@@ -48,15 +42,13 @@ type HTTP struct {
 	ShutdownTimeout time.Duration `mapstructure:"shutdown_timeout"`
 }
 
-// Observability contains settings for Tracing (Tempo) and Logs (Loki).
 type Observability struct {
 	Enabled      bool    `mapstructure:"enabled"`
-	OTLPEndpoint string  `mapstructure:"otlp_endpoint"` // e.g. "tempo:4318" or "otel-collector:4318"
-	LokiURL      string  `mapstructure:"loki_url"`      // e.g. "http://loki:3100/loki/api/v1/push"
-	SampleRate   float64 `mapstructure:"sample_rate"`   // percentage of traces to collect (0.0 to 1.0)
+	OTLPEndpoint string  `mapstructure:"otlp_endpoint"`
+	LokiURL      string  `mapstructure:"loki_url"`
+	SampleRate   float64 `mapstructure:"sample_rate"`
 }
 
-// RateLimit contains settings for the rate limiter middleware.
 type RateLimit struct {
 	Enabled         bool          `mapstructure:"enabled"`
 	CleanupInterval time.Duration `mapstructure:"cleanup_interval"`
@@ -64,13 +56,11 @@ type RateLimit struct {
 	Auth            LimitConfig   `mapstructure:"auth"`
 }
 
-// LimitConfig represents specific limits for a rate limiter instance.
 type LimitConfig struct {
 	Limit float64 `mapstructure:"limit"`
 	Burst int     `mapstructure:"burst"`
 }
 
-// Auth contains JWT and token verification settings.
 type Auth struct {
 	AccessTokenTTL       time.Duration `mapstructure:"access_token_ttl"`
 	RefreshTokenTTL      time.Duration `mapstructure:"refresh_token_ttl"`
@@ -79,18 +69,15 @@ type Auth struct {
 	Secret               string        `mapstructure:"-"`
 }
 
-// OAuth contains settings for third-party identity providers.
 type OAuth struct {
 	Google GoogleOAuth `mapstructure:"google"`
 }
 
-// GoogleOAuth holds Google App credentials.
 type GoogleOAuth struct {
 	ClientID     string `mapstructure:"client_id"`
 	ClientSecret string `mapstructure:"client_secret"`
 }
 
-// SMTP contains settings for the transactional email sender.
 type SMTP struct {
 	Host        string `mapstructure:"host"`
 	Port        int    `mapstructure:"port"`
@@ -99,7 +86,6 @@ type SMTP struct {
 	FromAddress string `mapstructure:"from_address"`
 }
 
-// MinIO contains S3-compatible storage settings.
 type MinIO struct {
 	Endpoint  string `mapstructure:"endpoint"`
 	AccessKey string `mapstructure:"access_key"`
@@ -108,7 +94,6 @@ type MinIO struct {
 	UseSSL    bool   `mapstructure:"use_ssl"`
 }
 
-// Postgres contains PostgreSQL connection and pool settings.
 type Postgres struct {
 	ConnectionURL string     `mapstructure:"connection_url"`
 	Host          string     `mapstructure:"host"`
@@ -120,42 +105,63 @@ type Postgres struct {
 	Database      string     `mapstructure:"-"`
 }
 
-// PoolConfig contains PostgreSQL connection pool settings.
 type PoolConfig struct {
 	MaxConns        int32         `mapstructure:"max_conns"`
 	MinConns        int32         `mapstructure:"min_conns"`
 	MaxConnLifetime time.Duration `mapstructure:"max_conn_lifetime"`
 }
 
-// Client contains frontend application URLs.
 type Client struct {
 	URL string `mapstructure:"url"`
 }
 
-// API contains the backend API URLs.
 type API struct {
 	URL string `mapstructure:"url"`
 }
 
-// Logging contains logging configuration.
 type Logging struct {
 	Level string `mapstructure:"level"`
 }
 
-// Load reads configuration from file, environment variables and defaults.
 func Load() (*Config, error) {
-	v := initViper()
-	if err := readConfigFile(v); err != nil {
-		return nil, err
+	v := viper.New()
+
+	// 1. Initial Setup
+	v.SetEnvPrefix("APP")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	// 2. Load .env file explicitly from several possible locations
+	v.SetConfigFile(".env")
+	v.AddConfigPath(".")    // Current dir
+	v.AddConfigPath("./..") // Parent dir (if running from cmd/app)
+	v.AddConfigPath("./../..")
+
+	if err := v.ReadInConfig(); err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			fmt.Printf("Error reading .env: %v\n", err)
+		}
+	}
+
+	// 3. Merge config.yml
+	v.SetConfigName("config")
+	v.SetConfigType("yaml")
+	v.AddConfigPath("./configs")
+	v.AddConfigPath(".")
+	if err := v.MergeInConfig(); err != nil {
+		return nil, fmt.Errorf("merge config.yml: %w", err)
 	}
 
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
-		return nil, fmt.Errorf("cannot unmarshal config: %w", err)
+		return nil, fmt.Errorf("unmarshal: %w", err)
 	}
 
+	// 4. Force bind and load sensitive values
+	// If Unmarshal skipped them because they aren't in YAML, we set them here.
 	loadSensitiveValues(v, &cfg)
 
+	// 5. Validation
 	if err := validateRequired(&cfg); err != nil {
 		return nil, err
 	}
@@ -167,96 +173,32 @@ func Load() (*Config, error) {
 	return &cfg, nil
 }
 
-func initViper() *viper.Viper {
-	v := viper.New()
-
-	v.SetConfigName("config")
-	v.SetConfigType("yaml")
-	v.AddConfigPath("./configs")
-	v.AddConfigPath(".")
-
-	// Defaults.
-	v.SetDefault("env", "development")
-	v.SetDefault("app.name", "RoleTalk-API")
-	v.SetDefault("app.version", "1.0.0")
-
-	v.SetDefault("http.port", ":8080")
-	v.SetDefault("http.read_timeout", "10s")
-	v.SetDefault("http.write_timeout", "10s")
-	v.SetDefault("http.idle_timeout", "60s")
-	v.SetDefault("http.shutdown_timeout", "8s")
-
-	// Observability defaults
-	v.SetDefault("observability.enabled", false)
-	v.SetDefault("observability.otlp_endpoint", "localhost:4318")
-	v.SetDefault("observability.loki_url", "http://localhost:3100/loki/api/v1/push")
-	v.SetDefault("observability.sample_rate", 1.0)
-
-	v.SetDefault("rate_limit.enabled", true)
-	v.SetDefault("rate_limit.cleanup_interval", "3m")
-	v.SetDefault("rate_limit.global.limit", 10.0)
-	v.SetDefault("rate_limit.global.burst", 20)
-	v.SetDefault("rate_limit.auth.limit", 1.0)
-	v.SetDefault("rate_limit.auth.burst", 5)
-
-	v.SetDefault("auth.access_token_ttl", "30m")
-	v.SetDefault("auth.refresh_token_ttl", "168h")
-	v.SetDefault("auth.email_verification_ttl", "24h")
-	v.SetDefault("auth.password_reset_ttl", "1h")
-
-	v.SetDefault("postgres.host", "localhost")
-	v.SetDefault("postgres.port", 5432)
-	v.SetDefault("postgres.ssl_mode", "disable")
-	v.SetDefault("postgres.pool.max_conns", 15)
-	v.SetDefault("postgres.pool.min_conns", 2)
-	v.SetDefault("postgres.pool.max_conn_lifetime", "30m")
-
-	v.SetDefault("logging.level", "info")
-
-	// Environment variable settings.
-	v.SetEnvPrefix("APP")
-	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
-	v.AutomaticEnv()
-
-	return v
-}
-
-func readConfigFile(v *viper.Viper) error {
-	if err := v.ReadInConfig(); err != nil {
-		var cfgNotFound viper.ConfigFileNotFoundError
-		if !errors.As(err, &cfgNotFound) {
-			return fmt.Errorf("cannot read config file: %w", err)
-		}
-	}
-	return nil
-}
-
 func loadSensitiveValues(v *viper.Viper, cfg *Config) {
-	cfg.Auth.Secret = v.GetString("jwt_secret")
+	// We use the keys exactly as they appear in .env (minus APP_ prefix)
+	cfg.Auth.Secret = v.GetString("JWT_SECRET")
 
-	cfg.OAuth.Google.ClientID = v.GetString("google_client_id")
-	cfg.OAuth.Google.ClientSecret = v.GetString("google_client_secret")
+	cfg.OAuth.Google.ClientID = v.GetString("OAUTH_GOOGLE_CLIENT_ID")
+	cfg.OAuth.Google.ClientSecret = v.GetString("OAUTH_GOOGLE_CLIENT_SECRET")
 
-	cfg.SMTP.Username = v.GetString("smtp_username")
-	cfg.SMTP.Password = v.GetString("smtp_password")
+	cfg.SMTP.Username = v.GetString("SMTP_USERNAME")
+	cfg.SMTP.Password = v.GetString("SMTP_PASSWORD")
 
-	cfg.Postgres.User = v.GetString("postgres_user")
-	cfg.Postgres.Password = v.GetString("postgres_password")
-	cfg.Postgres.Database = v.GetString("postgres_db")
+	cfg.Postgres.User = v.GetString("POSTGRES_USER")
+	cfg.Postgres.Password = v.GetString("POSTGRES_PASSWORD")
+	cfg.Postgres.Database = v.GetString("POSTGRES_DB")
 
-	cfg.MinIO.AccessKey = v.GetString("minio_access_key")
-	cfg.MinIO.SecretKey = v.GetString("minio_secret_key")
+	cfg.MinIO.AccessKey = v.GetString("MINIO_ACCESS_KEY")
+	cfg.MinIO.SecretKey = v.GetString("MINIO_SECRET_KEY")
 
-	cfg.Client.URL = v.GetString("client_url")
-	cfg.API.URL = v.GetString("api_url")
+	cfg.Client.URL = v.GetString("CLIENT_URL")
+	cfg.API.URL = v.GetString("API_URL")
 
-	if dbURL := v.GetString("database_url"); dbURL != "" {
+	if dbURL := v.GetString("DATABASE_URL"); dbURL != "" {
 		cfg.Postgres.ConnectionURL = dbURL
 	}
 }
 
 func validateRequired(cfg *Config) error {
-	// Only validate strictly required secrets for production-like environments
 	required := map[string]string{
 		"JWT Secret":           cfg.Auth.Secret,
 		"Postgres DB name":     cfg.Postgres.Database,
@@ -272,14 +214,13 @@ func validateRequired(cfg *Config) error {
 			return fmt.Errorf("%w: %s", ErrMissingEnvVar, name)
 		}
 	}
-
 	return nil
 }
 
 func validatePostgres(cfg *Config) error {
 	if cfg.Postgres.ConnectionURL == "" &&
 		(cfg.Postgres.Host == "" || cfg.Postgres.Database == "") {
-		return errors.New("postgres: need either connection_url or host+database+user+password")
+		return errors.New("postgres connection info is incomplete")
 	}
 	return nil
 }

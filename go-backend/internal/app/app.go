@@ -99,6 +99,7 @@ func New(ctx context.Context) (*App, error) {
 	log, err := logger.New(logger.Config{
 		Environment: cfg.Env,
 		Level:       cfg.Logging.Level,
+		OutputPaths: []string{"stdout"},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("app.New: init logger: %w", err)
@@ -159,7 +160,7 @@ func New(ctx context.Context) (*App, error) {
 	// 5. Services: Business Logic Layer
 	// Initialization order follows the dependency hierarchy
 	log.Debug("wiring services...")
-	msgSvc := svcmessage.NewService(repos.Message, log)
+	msgSvc := svcmessage.NewService(repos.Message, fileStore, log)
 	analyticSvc := svcanalytic.NewService(repos.Analytic, tx, log)
 	topicSvc := svctopic.NewService(repos.Topic, tx, log)
 	practiceSvc := svcpractice.NewService(repos.PracticeSession, repos.Topic, log)
@@ -213,7 +214,7 @@ func (a *App) Run(ctx context.Context) error {
 
 	errServer := make(chan error, 1)
 	go func() {
-		a.Logger.Infof("InCharacter API listening on %s", a.Config.HTTP.Port)
+		a.Logger.Infof("RoleTalk API listening on %s", a.Config.HTTP.Port)
 		errServer <- a.Server.Run(ctx)
 	}()
 

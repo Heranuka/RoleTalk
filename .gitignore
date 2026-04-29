@@ -1,4 +1,96 @@
-# Large Dependencies & Models (NEW)
-piper1-gpl/
+# ==============================================================================
+# 1. INFRASTRUCTURE & DATA (CRITICAL)
+# ==============================================================================
+# Никогда не пушим реальные данные контейнеров
+postgres_data/
+s3_data/
+prometheus_data/
+grafana_data/
+# Если MinIO создает папки внутри проекта
+storage/
+temp/
+
+# ==============================================================================
+# 2. ENVIRONMENT & SECRETS
+# ==============================================================================
+.env
+.env.*
+!.env.example
+secrets.yaml
+local.properties
+*.pem
+*.key
+
+# ==============================================================================
+# 3. AI MODELS & HEAVY ENGINES (SAVE GITHUB SPACE)
+# ==============================================================================
+# Сами движки (C++ исходники)
 whisper.cpp/
-voice-assistant/models/
+piper1-gpl/
+
+# Веса моделей (Binary files)
+**/models/whisper/
+**/models/piper/
+*.bin
+*.onnx
+*.pt
+*.safetensors
+*.json
+
+# Аудио данные (Test/Prod files)
+**/input/
+**/output/
+*.wav
+*.m4a
+*.mp3
+
+# ==============================================================================
+# 4. GO (go-backend)
+# ==============================================================================
+**/go-backend/main
+**/go-backend/bin/
+**/go-backend/vendor/
+go.work
+go.work.sum
+*.test
+*.out
+
+# ==============================================================================
+# 5. PYTHON (voice-assistant)
+# ==============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# ==============================================================================
+# 6. FLUTTER (speak_sim) - КРИТИЧНО ДЛЯ МОБИЛКИ
+# ==============================================================================
+**/flutter/speak_sim/.dart_tool/
+**/flutter/speak_sim/.packages
+**/flutter/speak_sim/.flutter-plugins
+**/flutter/speak_sim/.flutter-plugins-dependencies
+**/flutter/speak_sim/build/
+**/flutter/speak_sim/ios/Pods/
+**/flutter/speak_sim/ios/.symlinks/
+**/flutter/speak_sim/ios/Flutter/Generated.xcconfig
+**/flutter/speak_sim/ios/Flutter/flutter_export_environment.sh
+**/flutter/speak_sim/android/.gradle/
+**/flutter/speak_sim/android/local.properties
+**/flutter/speak_sim/android/app/build.gradle.kts.ide
+
+# ==============================================================================
+# 7. IDE & SYSTEM
+# ==============================================================================
+.idea/
+.vscode/
+*.iml
+*.iws
+*.swp
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db

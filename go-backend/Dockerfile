@@ -1,16 +1,26 @@
-FROM golang:1.25.6 AS builder
+# Stage 1: Build
+FROM golang:1.25.6-alpine AS builder
 WORKDIR /app
-
-COPY go.mod ./
+COPY go.mod go.sum ./
 RUN go mod download
-
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o voice-service ./cmd/app
+RUN go build -o /app/main cmd/app/main.go
 
-FROM debian:bookworm-slim
+# Stage 2: Final
+FROM alpine:latest
+RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 
-COPY --from=builder /app/voice-service .
-EXPOSE 8080
+# Копируем бинарник
+COPY --from=builder /app/main .
+# Копируем конфиги
+COPY --from=builder /app/configs ./configs
+# Копируем шаблоны
+COPY --from=builder /app/internal/infra/mailer/templates ./internal/infra/mailer/templates
 
-CMD ["./voice-service"]
+# ВАЖНО: Если ты хочешь, чтобы приложение читало .env как файл,
+# его нужно скопировать (но лучше прокидывать через docker-compose)
+# COPY --from=builder /app/.env .
+
+EXPOSE 8080
+CMD ["./main"]

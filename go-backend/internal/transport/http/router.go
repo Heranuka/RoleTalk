@@ -1,4 +1,4 @@
-// Package http manages the routing and server configuration for the InCharacter API.
+// Package http manages the routing and server configuration for the RoleTalk API.
 package http
 
 import (
@@ -23,7 +23,7 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// Handlers bundles all handler instances for the InCharacter application.
+// Handlers bundles all handler instances for the RoleTalk application.
 type Handlers struct {
 	Auth            *handlerauth.Handler
 	User            *handleruser.Handler

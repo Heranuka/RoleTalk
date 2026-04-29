@@ -17,7 +17,7 @@ http:
 # Telemetry and Monitoring
 observability:
   enabled: true
-  otlp_endpoint: "localhost:4318" # Tempo (Traces)
+  otlp_endpoint: "tempo:4318" # Tempo (Traces)
   loki_url: "http://localhost:3100/loki/api/v1/push" # Loki (Logs)
   sample_rate: 1.0
 
@@ -63,7 +63,7 @@ postgres:
 # S3 Compatible Storage
 minio:
   endpoint: "localhost:9000"
-  bucket: "roleTalk-storage"
+  bucket: "roletalk-storage"
   use_ssl: false
 
 # Frontend Client URL
