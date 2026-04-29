@@ -1,0 +1,81 @@
+# General
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
+*.bak
+*.tmp
+*.temp
+~*
+*.swp
+*.swo
+
+# IDE / Editors
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.sublime-*
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Go (Backend)
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+bin/
+vendor/
+go.work
+go.work.sum
+coverage.*
+*.coverprofile
+profile.cov
+migrations/*.backup
+
+# Frontend (web directory)
+node_modules/
+web/node_modules/
+dist/
+web/dist/
+dist-ssr/
+web/dist-ssr/
+build/
+web/build/
+.tmp/
+web/.tmp/
+.vite/
+web/.vite/
+.npm/
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+*.env.backup
+secrets.yaml
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Testing / Coverage
+.nyc_output/
+.cache/
+
+# Models
+voice-assistant/models/
+voice-assistant/models/**/*.onnx
+voice-assistant/models/**/*.bin
+voice-assistant/models/**/*.pt
+voice-assistant/models/**/*.safetensors

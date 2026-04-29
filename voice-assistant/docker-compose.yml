@@ -1,0 +1,23 @@
+services:
+  assistant-api:
+    build: .
+    container_name: assistant_api
+    ports:
+      - "8080:8080"
+    volumes:
+      # Whisper модели (уже не пустая)
+      - ./models/whisper:/app/models/whisper
+
+      # Piper голоса (теперь мы их туда скопировали)
+      - ./models/piper:/app/models/piper:ro
+
+      # Временные папки
+      - ./input:/app/input
+      - ./output:/app/output
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - OLLAMA_URL=http://host.docker.internal:11434
+      - HF_TOKEN=hello
+    restart: unless-stopped

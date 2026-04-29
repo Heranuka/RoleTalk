@@ -1,0 +1,74 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - bodyclose
+    - dogsled
+    - dupl
+    - errcheck
+    - exhaustive
+    - forcetypeassert
+    - gochecknoinits
+    - goconst
+    - gocritic
+    - gocyclo
+    - goprintffuncname
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - nakedret
+    - nolintlint
+    - revive
+    - staticcheck
+    - unconvert
+    - unparam
+    - unused
+    - whitespace
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    gocyclo:
+      min-complexity: 15
+    misspell:
+      locale: US
+    staticcheck:
+      checks: [ "all" ]
+    revive:
+      rules:
+        - name: import-alias-naming
+          severity: warning
+          disabled: false
+          exclude: [ "" ]
+          arguments:
+            - allow-regex: "^[a-z][a-z0-9]*$"
+              deny-regex: '^v\d+$'
+  exclusions:
+    paths:
+      - "api/swagger/*"
+      - "test/integration/*"
+      - "web/node_modules/*"
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+output:
+  formats:
+    text:
+      print-issued-lines: true
+      print-linter-name: true
+      colors: true
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+  build-tags:
+    - integration

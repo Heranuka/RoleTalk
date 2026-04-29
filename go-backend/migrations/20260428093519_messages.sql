@@ -1,0 +1,12 @@
+-- +goose Up
+CREATE TABLE messages (
+                          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                          session_id UUID REFERENCES sessions(id) ON DELETE CASCADE,
+                          sender_role VARCHAR(20),
+                          text_content TEXT,
+                          audio_path TEXT,
+                          created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- +goose Down
+DROP TABLE IF EXISTS messages;
