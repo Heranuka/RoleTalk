@@ -20,24 +20,30 @@ import (
 
 var tracer = otel.Tracer("internal/service/practice")
 
-// Service coordinates practice session lifecycles and interactions.
+// Service coordinates practice session lifecycles and triggers post-session analytics.
 type Service struct {
-	repo      Repository
-	topicRepo TopicRepository
-	log       *zap.SugaredLogger
+	repo        Repository
+	topicRepo   TopicRepository
+	analyticSvc AnalyticService // New dependency for AI evaluation
+	log         *zap.SugaredLogger
 }
 
 // NewService creates a new practice session Service instance.
-func NewService(repo Repository, tRepo TopicRepository, log *zap.SugaredLogger) *Service {
+func NewService(
+	repo Repository,
+	tRepo TopicRepository,
+	aSvc AnalyticService,
+	log *zap.SugaredLogger,
+) *Service {
 	return &Service{
-		repo:      repo,
-		topicRepo: tRepo,
-		log:       log,
+		repo:        repo,
+		topicRepo:   tRepo,
+		analyticSvc: aSvc,
+		log:         log,
 	}
 }
 
 // StartSession initializes a new practice instance for a user.
-// It verifies the topic existence and ensures no other active session exists for the user.
 func (s *Service) StartSession(ctx context.Context, userID, topicID uuid.UUID) (uuid.UUID, error) {
 	ctx, span := tracer.Start(ctx, "Service.Practice.StartSession")
 	defer span.End()
@@ -57,14 +63,14 @@ func (s *Service) StartSession(ctx context.Context, userID, topicID uuid.UUID) (
 		return uuid.Nil, fmt.Errorf("verify topic: %w", err)
 	}
 
-	// 2. Check if user already has an active session (Optional Business Rule)
+	// 2. Check if user already has an active session
 	active, err := s.repo.GetActiveByUserID(ctx, userID)
 	if err == nil && active != nil {
 		log.Warnw("user attempted to start multiple sessions", "user_id", userID)
 		return uuid.Nil, ErrActiveSessionExists
 	}
 
-	// 3. Create domain entity
+	// 3. Create domain entity (PracticeSession instead of Session)
 	session := domain.NewPracticeSession(userID, topicID)
 
 	// 4. Persist in database
@@ -78,22 +84,43 @@ func (s *Service) StartSession(ctx context.Context, userID, topicID uuid.UUID) (
 	return session.ID, nil
 }
 
-// CompleteSession marks an ongoing session as successfully finished.
+// CompleteSession marks an ongoing session as finished and triggers AI skill evaluation.
 func (s *Service) CompleteSession(ctx context.Context, sessionID uuid.UUID) error {
 	ctx, span := tracer.Start(ctx, "Service.Practice.CompleteSession")
 	defer span.End()
 
 	log := logger.FromContext(ctx, s.log)
 
-	err := s.repo.UpdateStatus(ctx, sessionID, "completed")
+	// 1. Fetch the session to get the UserID for the analytics service
+	session, err := s.repo.GetByID(ctx, sessionID)
 	if err != nil {
 		if errors.Is(err, repopractice.ErrSessionNotFound) {
 			return ErrSessionNotFound
 		}
-		return fmt.Errorf("update session status: %w", err)
+		return fmt.Errorf("fetch session: %w", err)
 	}
 
-	log.Infow("practice session completed", "session_id", sessionID)
+	// 2. Update status to 'completed' in DB
+	err = s.repo.UpdateStatus(ctx, sessionID, "completed")
+	if err != nil {
+		return fmt.Errorf("update status: %w", err)
+	}
+
+	// 3. Trigger AI Evaluation
+	// This is the core "Feedback Loop". We pass the UserID and SessionID.
+	// The Analytic service will fetch the transcript and update user_skills.
+	err = s.analyticSvc.EvaluateSession(ctx, session.UserID, sessionID)
+	if err != nil {
+		// We log this as an error but don't strictly fail the "completion"
+		// because the session is already marked as done in the DB.
+		log.Errorw("post-session evaluation failed",
+			"session_id", sessionID,
+			"error", err,
+		)
+		return fmt.Errorf("evaluate session: %w", err)
+	}
+
+	log.Infow("practice session completed and evaluated", "session_id", sessionID)
 	return nil
 }
 

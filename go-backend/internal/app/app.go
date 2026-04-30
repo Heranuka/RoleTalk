@@ -5,6 +5,8 @@ package app
 import (
 	"context"
 	"fmt"
+	"go-backend/internal/infra/ollama"
+	"go-backend/internal/infra/prompt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -145,6 +147,13 @@ func New(ctx context.Context) (*App, error) {
 	}, log)
 	oauthAdapter := oauth.NewGoogleAdapter(googleClient)
 
+	promptEngine, err := prompt.NewEngine()
+	if err != nil {
+		return nil, fmt.Errorf("app.New: prompt engine: %w", err)
+	}
+
+	ollamaClient := ollama.NewClient(cfg.Ollama.URL, "qwen2.5:latest", log)
+
 	// 4. Repositories: Data Access Layer
 	log.Debug("wiring repositories...")
 	repos := &Repositories{
@@ -161,11 +170,11 @@ func New(ctx context.Context) (*App, error) {
 	// Initialization order follows the dependency hierarchy
 	log.Debug("wiring services...")
 	msgSvc := svcmessage.NewService(repos.Message, fileStore, log)
-	analyticSvc := svcanalytic.NewService(repos.Analytic, tx, log)
+	analyticSvc := svcanalytic.NewService(repos.Analytic, tx, msgSvc, repos.PracticeSession, repos.Topic, ollamaClient, promptEngine, log)
 	topicSvc := svctopic.NewService(repos.Topic, tx, log)
-	practiceSvc := svcpractice.NewService(repos.PracticeSession, repos.Topic, log)
+	practiceSvc := svcpractice.NewService(repos.PracticeSession, repos.Topic, analyticSvc, log)
 	userSvc := svcuser.NewService(repos.User, tx, fileStore, log)
-	aiSvc := svcai.NewService(fileStore, msgSvc, cfg.API.URL, log)
+	aiSvc := svcai.NewService(fileStore, msgSvc, repos.Topic, repos.PracticeSession, promptEngine, cfg.API.URL, log)
 	authSvc := svcauth.NewService(userSvc, repos.AuthSession, repos.OAuthConnection, repos.VerificationToken, authSender, oauthAdapter, tx, &cfg.Auth, log)
 
 	svcs := &Services{
@@ -187,7 +196,7 @@ func New(ctx context.Context) (*App, error) {
 		User:            handleruser.NewHandler(svcs.User, log),
 		Topic:           handlertopic.NewHandler(svcs.Topic, log),
 		Message:         handlermessage.NewHandler(svcs.Ai, log), // Ai service orchestrates ProcessVoiceTurn
-		Analytic:        handleranalytic.NewHandler(svcs.Analytic, log),
+		Analytic:        handleranalytic.NewHandler(analyticSvc, log),
 		PracticeSession: handlerpractice.NewHandler(svcs.PracticeSession, log),
 	}
 

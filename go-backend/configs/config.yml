@@ -32,6 +32,11 @@ rate_limit:
     limit: 1.0
     burst: 3
 
+# LLM Provider (Ollama)
+ollama:
+  url: "http://localhost:11434"
+  model: "qwen2.5:latest" # Или qwen2.5:7b для лучшего качества
+  
 # JWT and TTL Settings
 auth:
   access_token_ttl: "30m"

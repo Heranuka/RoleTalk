@@ -6,11 +6,14 @@ class LLMManager:
         self.url = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
         self.model = "qwen2.5:latest"
 
-    def ask(self, text: str, lang: str, rid: str):
+    def ask(self, text: str, lang: str, rid: str, system_context: str): # Добавили system_context
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": f"You are a roleplay partner. Speak only in {lang}. Short natural responses."},
+                {
+                    "role": "system",
+                    "content": system_context
+                },
                 {"role": "user", "content": text}
             ],
             "stream": False

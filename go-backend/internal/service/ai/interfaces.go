@@ -19,6 +19,19 @@ type MessageService interface {
 	GetSessionHistory(ctx context.Context, sessionID uuid.UUID) ([]*domain.Message, error)
 }
 
+type TopicRepository interface {
+	GetByID(ctx context.Context, id uuid.UUID) (*domain.Topic, error)
+}
+
+type PracticeSessionRepository interface {
+	GetByID(ctx context.Context, id uuid.UUID) (*domain.PracticeSession, error)
+}
+
+type PromptService interface {
+	RenderRoleplay(params domain.RoleplayParams) (string, error)
+	RenderEvaluation(params domain.EvaluationParams) (string, error)
+}
+
 // UserRepo defines the behavior for retrieving user language preferences.
 type UserRepo interface {
 	GetByID(ctx context.Context, id uuid.UUID) (interface{}, error) // simplified for example

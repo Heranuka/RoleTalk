@@ -46,37 +46,18 @@ class VoiceCapture {
   Future<void> dispose() async {
     await _rec.dispose();
   }
-
-  Future<String?> sendVoiceToBackend(String path) async {
-    try {
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('http://10.0.2.2:8080/voice'), // 10.0.2.2 для Android, localhost для iOS
-      );
-      request.files.add(await http.MultipartFile.fromPath('file', path));
-
-      final response = await request.send();
-
-      if (response.statusCode == 200) {
-        final bytes = await response.stream.toBytes();
-        final dir = await getTemporaryDirectory();
-        final responsePath = '${dir.path}/ai_res_${DateTime.now().millisecondsSinceEpoch}.wav';
-
-        final file = File(responsePath);
-        await file.writeAsBytes(bytes);
-        return responsePath;
-      }
-    } catch (e) {
-      debugPrint("Error sending voice: $e");
-    }
-    return null;
-  }
 }
 
-Future<void> playVoiceFile(String path) async {
+Future<void> playVoiceFile(String pathOrUrl) async {
   final player = AudioPlayer();
   try {
-    await player.play(DeviceFileSource(path));
+    Source source;
+    if (pathOrUrl.startsWith('http')) {
+      source = UrlSource(pathOrUrl);
+    } else {
+      source = DeviceFileSource(pathOrUrl);
+    }
+    await player.play(source);
     await player.onPlayerComplete.first;
   } catch (e) {
     debugPrint("Error playing voice: $e");

@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/app_localizations.dart';
 import '../services/settings_store.dart';
-import '../models/topic_vote.dart'; // Добавь этот импорт
+import '../models/topic_vote.dart';
+import 'prep_screen.dart';
 import 'multi/community_themes_screen.dart';
-import 'prep_screen.dart'; // Добавь этот импорт
+import '../services/topic_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,6 +16,42 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _aiController = TextEditingController();
+  List<TopicVote> _topics = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchTopics();
+  }
+
+  Future<void> _fetchTopics() async {
+    try {
+      final topicsData = await TopicService.instance.getOfficialTopics();
+      setState(() {
+        _topics = topicsData.map((t) => TopicVote(
+          id: t['id'],
+          title: t['title'],
+          emoji: t['emoji'] ?? '🎯',
+          level: t['difficulty_level'] ?? 'A2',
+          duration: '5-10 min',
+          skill: 'Conversation',
+          goal: t['goal'] ?? '',
+          votes: 0,
+          voterIds: [],
+          publicContext: t['description'] ?? '',
+          myRole: t['my_role'] ?? 'Student',
+          partnerRole: t['partner_role'] ?? 'AI',
+          aiRoleName: t['partner_role'] ?? 'AI',
+          aiEmoji: t['partner_emoji'] ?? '🤖',
+        )).toList();
+        _loading = false;
+      });
+    } catch (e) {
+      debugPrint("Error fetching topics: $e");
+      setState(() => _loading = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -64,35 +101,27 @@ class _HomeScreenState extends State<HomeScreen> {
 
           const SizedBox(height: 12),
 
-          // ПЕРЕДАЕМ ДАННЫЕ В КАРТОЧКИ
-          _buildSoloSlimCard(
-            emoji: '🎯', 
-            title: 'Job Interview', 
-            level: 'C1', 
-            tag: 'Professional',
-            context: context,
-          ),
-          _buildSoloSlimCard(
-            emoji: '🏨', 
-            title: 'Hotel Check-in', 
-            level: 'A2', 
-            tag: 'Travel',
-            context: context,
-          ),
-          _buildSoloSlimCard(
-            emoji: '📉', 
-            title: 'Salary Negotiation', 
-            level: 'B2', 
-            tag: 'Business',
-            context: context,
-          ),
-          _buildSoloSlimCard(
-            emoji: '☕', 
-            title: 'Small Talk at Café', 
-            level: 'A1', 
-            tag: 'Casual',
-            context: context,
-          ),
+          if (_loading)
+            const Center(child: CircularProgressIndicator())
+          else if (_topics.isEmpty)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Text(
+                  AppLocalizations.of(context, 'no_topics_found') ?? 'No scenarios available.',
+                  style: const TextStyle(color: Colors.grey),
+                ),
+              ),
+            )
+          else
+            ..._topics.map((topic) => _buildSoloSlimCard(
+              emoji: topic.emoji,
+              title: topic.title,
+              level: topic.level,
+              tag: topic.skill,
+              context: context,
+              topic: topic,
+            )),
           
           const SizedBox(height: 30),
         ],
@@ -162,6 +191,7 @@ class _HomeScreenState extends State<HomeScreen> {
     required String level, 
     required String tag,
     required BuildContext context,
+    required TopicVote topic,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Card(
@@ -187,22 +217,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         // ВОТ ТУТ ОНТАП: Создаем тему на лету и переходим к практике
-        onTap: () => _startScenario(TopicVote(
-          id: title.toLowerCase().replaceAll(' ', '_'),
-          title: title,
-          emoji: emoji,
-          level: level,
-          duration: '5-10 min',
-          skill: tag,
-          goal: 'Practice your $tag skills in this scenario.',
-          votes: 0,
-          voterIds: [],
-          publicContext: 'This is a $level level scenario focused on $tag.',
-          myRole: 'Student',
-          partnerRole: 'AI Tutor',
-          aiRoleName: 'AI Teacher',
-          aiEmoji: '🤖',
-        )),
+        onTap: () => _startScenario(topic),
       ),
     );
   }

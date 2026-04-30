@@ -8,6 +8,7 @@ import '../services/voice_capture.dart';
 import '../services/app_localizations.dart'; // Локализация
 import '../theme/app_theme.dart';
 import 'feedback_screen.dart';
+import '../services/practice_service.dart';
 
 class SessionScreen extends StatefulWidget {
   const SessionScreen({super.key, required this.topic});
@@ -33,6 +34,7 @@ class _SessionScreenState extends State<SessionScreen> with TickerProviderStateM
   late AnimationController _pulseMe;
 
   late VoiceCapture _voice;
+  String? _backendSessionId;
 
   @override
   void initState() {
@@ -91,6 +93,13 @@ class _SessionScreenState extends State<SessionScreen> with TickerProviderStateM
   }
 
   Future<void> _startSession() async {
+    try {
+      final sessionData = await PracticeService.instance.startSession(widget.topic.id);
+      _backendSessionId = sessionData['id'];
+    } catch (e) {
+      debugPrint("Error starting session: $e");
+      // Fallback or show error
+    }
     await Future<void>.delayed(const Duration(milliseconds: 800));
     await _flushPartnerLines();
   }
@@ -148,28 +157,46 @@ class _SessionScreenState extends State<SessionScreen> with TickerProviderStateM
   }
 
   Future<void> _finishVoiceSend() async {
+    if (_backendSessionId == null) return;
     setState(() => _busy = true);
 
-    // 1. Останавливаем запись и отправляем на сервер
+    // 1. Останавливаем запись
     final recordPath = await _voice.stop();
     if (recordPath != null) {
-      // Ждем ответ от сервера (путь к WAV файлу от Piper)
-      final aiVoicePath = await _voice.sendVoiceToBackend(recordPath);
+      try {
+        // 2. Отправляем на бэкенд
+        final response = await PracticeService.instance.sendVoiceTurn(
+          sessionId: _backendSessionId!,
+          audioPath: recordPath,
+          language: 'English', // Можно брать из настроек
+        );
 
-      if (aiVoicePath != null) {
-        // 2. Имитируем, что партнер начал говорить
-        _pulsePartner.repeat(reverse: true);
+        final aiText = response['ai_response']['text'];
+        final aiAudioUrl = response['ai_response']['audio_url'];
 
-        // 3. Проигрываем голос ИИ
-        await playVoiceFile(aiVoicePath);
+        if (aiAudioUrl != null) {
+          // 3. Имитируем, что партнер начал говорить
+          _pulsePartner.repeat(reverse: true);
 
-        _pulsePartner.stop();
-        _pulsePartner.value = 0.0;
+          // 4. Проигрываем голос ИИ (ApiClient.baseUrl может понадобиться если URL относительный)
+          // Если аудио_url полный - ок, если нет - надо склеить.
+          String fullAudioUrl = aiAudioUrl;
+          if (!fullAudioUrl.startsWith('http')) {
+            fullAudioUrl = "http://localhost:8080$aiAudioUrl";
+          }
+          
+          await playVoiceFile(fullAudioUrl);
+
+          _pulsePartner.stop();
+          _pulsePartner.value = 0.0;
+        }
+      } catch (e) {
+        debugPrint("Error in voice turn: $e");
       }
     }
 
     if (mounted) setState(() => _busy = false);
-    _startIdleTimer(); // Снова запускаем таймер подсказок
+    _startIdleTimer();
   }
 
   @override

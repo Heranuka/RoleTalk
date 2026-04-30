@@ -5,12 +5,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	chimw "github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/cors"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/riandyrn/otelchi"
-	httpswagger "github.com/swaggo/http-swagger"
 	"go-backend/internal/config"
 	handleranalytic "go-backend/internal/transport/http/handler/analytic"
 	handlerauth "go-backend/internal/transport/http/handler/auth"
@@ -19,6 +13,13 @@ import (
 	handlertopic "go-backend/internal/transport/http/handler/topic"
 	handleruser "go-backend/internal/transport/http/handler/user"
 	mw "go-backend/internal/transport/http/middleware"
+
+	"github.com/go-chi/chi/v5"
+	chimw "github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/riandyrn/otelchi"
+	httpswagger "github.com/swaggo/http-swagger"
 	"go.uber.org/zap"
 	"golang.org/x/time/rate"
 )
@@ -80,7 +81,6 @@ func NewRouter(
 
 	// --- API VERSION 1 ---
 	r.Route("/api/v1", func(r chi.Router) {
-
 		// PUBLIC AUTH ROUTES
 		r.Route("/auth", func(r chi.Router) {
 			if cfg.RateLimit.Enabled {

@@ -24,6 +24,7 @@ type Config struct {
 	SMTP          SMTP          `mapstructure:"smtp"`
 	Postgres      Postgres      `mapstructure:"postgres"`
 	MinIO         MinIO         `mapstructure:"minio"`
+	Ollama        Ollama        `mapstructure:"ollama"`
 	Client        Client        `mapstructure:"client"`
 	API           API           `mapstructure:"api"`
 	Logging       Logging       `mapstructure:"logging"`
@@ -40,6 +41,12 @@ type HTTP struct {
 	WriteTimeout    time.Duration `mapstructure:"write_timeout"`
 	IdleTimeout     time.Duration `mapstructure:"idle_timeout"`
 	ShutdownTimeout time.Duration `mapstructure:"shutdown_timeout"`
+}
+
+// Ollama contains settings for the local Large Language Model provider.
+type Ollama struct {
+	URL   string `mapstructure:"url"`
+	Model string `mapstructure:"model"`
 }
 
 type Observability struct {
@@ -189,6 +196,9 @@ func loadSensitiveValues(v *viper.Viper, cfg *Config) {
 
 	cfg.MinIO.AccessKey = v.GetString("MINIO_ACCESS_KEY")
 	cfg.MinIO.SecretKey = v.GetString("MINIO_SECRET_KEY")
+
+	cfg.Ollama.URL = v.GetString("OLLAMA_URL")
+	cfg.Ollama.Model = v.GetString("OLLAMA_MODEL")
 
 	cfg.Client.URL = v.GetString("CLIENT_URL")
 	cfg.API.URL = v.GetString("API_URL")

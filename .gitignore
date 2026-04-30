@@ -94,3 +94,4 @@ venv/
 .AppleDouble
 .LSOverride
 Thumbs.db
+.aider*

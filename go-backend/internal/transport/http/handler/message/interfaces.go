@@ -15,8 +15,7 @@ type Service interface {
 	// It returns the user's transcribed text, the AI's text response, and the URL to the generated audio.
 	ProcessVoiceTurn(
 		ctx context.Context,
-		userID uuid.UUID,
-		sessionID uuid.UUID,
+		userID, sessionID uuid.UUID,
 		practiceLang string,
 		audioData io.Reader,
 	) (string, string, string, error)

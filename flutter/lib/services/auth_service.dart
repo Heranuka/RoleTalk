@@ -1,28 +1,26 @@
 import 'dart:convert';
-import 'dart:math';
 
-import 'package:crypto/crypto.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_user.dart';
+import 'api_client.dart';
 
-/// Локальная демо-авторизация. Пароли — SHA-256 в prefs (не для продакшена).
-/// Google: реальный `google_sign_in`, при ошибке/отмене — мок-профиль.
 class AuthService {
-  AuthService._();
+  AuthService._() {
+    _apiClient = ApiClient(Dio());
+  }
   static final AuthService instance = AuthService._();
 
+  late final ApiClient _apiClient;
+
   static const _sessionKey = 'auth_session_v2';
-  static String _credKey(String email) => 'cred_v2_${email.toLowerCase().trim()}';
+  static const _accessTokenKey = 'access_token';
+  static const _refreshTokenKey = 'refresh_token';
 
   AppUser? _cache;
-
-  String _hash(String email, String password) {
-    final bytes = utf8.encode('${email.toLowerCase().trim()}|$password|speak_sim');
-    return sha256.convert(bytes).toString();
-  }
 
   Future<bool> isLoggedIn() async {
     final p = await SharedPreferences.getInstance();
@@ -41,15 +39,19 @@ class AuthService {
 
   AppUser? get currentUser => _cache;
 
-  Future<void> _saveSession(AppUser user) async {
+  Future<void> _saveSession(AppUser user, String accessToken, String refreshToken) async {
     final p = await SharedPreferences.getInstance();
     await p.setString(_sessionKey, jsonEncode(user.toJson()));
+    await p.setString(_accessTokenKey, accessToken);
+    await p.setString(_refreshTokenKey, refreshToken);
     _cache = user;
   }
 
   Future<void> logout() async {
     final p = await SharedPreferences.getInstance();
     await p.remove(_sessionKey);
+    await p.remove(_accessTokenKey);
+    await p.remove(_refreshTokenKey);
     _cache = null;
     try {
       await GoogleSignIn.instance.signOut();
@@ -61,76 +63,96 @@ class AuthService {
     required String password,
     required String displayName,
   }) async {
-    final e = email.trim();
-    if (e.length < 5 || !e.contains('@')) {
-      throw AuthException('Некорректная почта');
+    try {
+      await _apiClient.instance.post('/auth/register', data: {
+        'email': email,
+        'password': password,
+        'display_name': displayName,
+      });
+      // After registration in this backend, user might need to verify email or just login
+      // For now, let's just try to login automatically if registration is successful
+      await loginWithEmail(email: email, password: password);
+    } on DioException catch (e) {
+      final msg = e.response?.data['message'] ?? 'Ошибка регистрации';
+      throw AuthException(msg.toString());
     }
-    if (password.length < 6) {
-      throw AuthException('Пароль от 6 символов');
-    }
-    final p = await SharedPreferences.getInstance();
-    if (p.containsKey(_credKey(e))) {
-      throw AuthException('Эта почта уже зарегистрирована');
-    }
-    final name = displayName.trim().isEmpty ? e.split('@').first : displayName.trim();
-    await p.setString(
-      _credKey(e),
-      jsonEncode({
-        'h': _hash(e, password),
-        'name': name,
-      }),
-    );
-    await _saveSession(AppUser(email: e, displayName: name, provider: 'email'));
   }
 
   Future<void> loginWithEmail({
     required String email,
     required String password,
   }) async {
-    final e = email.trim();
-    final p = await SharedPreferences.getInstance();
-    final raw = p.getString(_credKey(e));
-    if (raw == null) {
-      throw AuthException('Нет пользователя с такой почтой');
+    try {
+      final response = await _apiClient.instance.post('/auth/login', data: {
+        'email': email,
+        'password': password,
+      });
+
+      final data = response.data as Map<String, dynamic>;
+      final accessToken = data['access_token'] as String;
+      final refreshToken = data['refresh_token'] as String;
+
+      // After login, we usually fetch the profile to get the display name etc.
+      final profileResponse = await _apiClient.instance.get('/users/me', options: Options(
+        headers: {'Authorization': 'Bearer $accessToken'}
+      ));
+      final profileData = profileResponse.data as Map<String, dynamic>;
+
+      final user = AppUser(
+        email: profileData['email'] as String,
+        displayName: profileData['display_name'] as String,
+        provider: 'email',
+      );
+
+      await _saveSession(user, accessToken, refreshToken);
+    } on DioException catch (e) {
+      final msg = e.response?.data['message'] ?? 'Ошибка входа';
+      throw AuthException(msg.toString());
     }
-    final map = jsonDecode(raw) as Map<String, dynamic>;
-    if (map['h'] != _hash(e, password)) {
-      throw AuthException('Неверный пароль');
-    }
-    final name = map['name'] as String? ?? e.split('@').first;
-    await _saveSession(AppUser(email: e, displayName: name, provider: 'email'));
   }
 
-  /// `null` — ок. Строка — предупреждение (демо-фолбэк). [AuthException] при отмене.
   Future<String?> signInWithGoogle() async {
+    // Note: Backend has /auth/google/callback which expects a 'code'
+    // This requires proper Google Sign In flow that returns an auth code.
+    // For now, we keep the demo fallback or implement if google_sign_in supports it.
     try {
-      await GoogleSignIn.instance.initialize();
-      final account = await GoogleSignIn.instance.authenticate(scopeHint: ['email', 'profile']);
-      final email = account.email;
-      final name = account.displayName ?? email.split('@').first;
-      await _saveSession(AppUser(email: email, displayName: name, provider: 'google'));
-      return null;
-    } on AuthException {
-      rethrow;
-    } catch (e, st) {
-      if (kDebugMode) {
-        debugPrint('GoogleSignIn fallback: $e\n$st');
+      final googleUser = await GoogleSignIn().signIn();
+      if (googleUser == null) return null;
+
+      final auth = await googleUser.authentication;
+      final serverAuthCode = googleUser.serverAuthCode;
+
+      if (serverAuthCode == null) {
+        throw AuthException('Could not get server auth code from Google');
       }
-      final id = Random().nextInt(99999);
-      await _saveSession(
-        AppUser(
-          email: 'demo.google.$id@gmail.com',
-          displayName: 'Google (демо)',
-          provider: 'google',
-        ),
+
+      final response = await _apiClient.instance.post('/auth/google/callback', data: {
+        'code': serverAuthCode,
+      });
+
+      final data = response.data as Map<String, dynamic>;
+      final accessToken = data['access_token'] as String;
+      final refreshToken = data['refresh_token'] as String;
+
+      final user = AppUser(
+        email: googleUser.email,
+        displayName: googleUser.displayName ?? googleUser.email.split('@').first,
+        provider: 'google',
       );
-      return 'Google без OAuth-конфига — вошли демо-профилём.';
+
+      await _saveSession(user, accessToken, refreshToken);
+      return null;
+    } catch (e) {
+      if (kDebugMode) print('Google Sign In Error: $e');
+      return 'Google OAuth failed. Make sure your client_id is configured in the backend.';
     }
   }
 }
 
 class AuthException implements Exception {
   AuthException(this.message);
-
   final String message;
+  @override
+  String toString() => message;
 }
+

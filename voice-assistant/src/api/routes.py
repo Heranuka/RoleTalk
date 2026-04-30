@@ -18,7 +18,8 @@ async def process_voice(
         background_tasks: BackgroundTasks,
         file: UploadFile = File(...),
         x_request_id: Optional[str] = Header(None),
-        x_practice_language: str = Header("English")
+        x_practice_language: str = Header("English"),
+        x_system_context: str = Header("You are a helpful roleplay partner.")
 ):
     rid = x_request_id or str(uuid.uuid4())
     temp_m4a = f"/tmp/{rid}.m4a"
@@ -28,7 +29,7 @@ async def process_voice(
         shutil.copyfileobj(file.file, buffer)
 
     try:
-        user_text, ai_text, out_path, in_wav = await orchestrator.execute_turn(temp_m4a, x_practice_language, rid)
+        user_text, ai_text, out_path, in_wav = await orchestrator.execute_turn(temp_m4a, x_practice_language, x_system_context, rid)
 
         # Регистрация удаления временных файлов
         background_tasks.add_task(cleanup, [temp_m4a, in_wav, out_path])

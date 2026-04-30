@@ -6,6 +6,9 @@ import '../../services/app_localizations.dart';
 import 'room_wait_screen.dart';
 import 'community_themes_screen.dart';
 
+import '../../services/topic_service.dart';
+import '../../models/topic_vote.dart';
+
 class PeopleHomeScreen extends StatefulWidget {
   const PeopleHomeScreen({super.key});
 
@@ -15,6 +18,45 @@ class PeopleHomeScreen extends StatefulWidget {
 
 class _PeopleHomeScreenState extends State<PeopleHomeScreen> {
   final _search = TextEditingController();
+  List<TopicVote> _communityTopics = [];
+  bool _loadingTopics = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCommunityTopics();
+  }
+
+  Future<void> _fetchCommunityTopics() async {
+    try {
+      final data = await TopicService.instance.getCommunityTopics();
+      setState(() {
+        _communityTopics = data.map((t) => TopicVote(
+          id: t['id'],
+          title: t['title'],
+          emoji: t['emoji'] ?? '🎭',
+          level: t['difficulty_level'] ?? 'All',
+          duration: '5-10 min',
+          skill: 'Community',
+          goal: t['goal'] ?? '',
+          votes: t['likes_count'] ?? 0,
+          voterIds: [],
+          publicContext: t['description'] ?? '',
+          myRole: t['my_role'] ?? 'User',
+          partnerRole: t['partner_role'] ?? 'AI',
+          aiRoleName: t['partner_role'] ?? 'AI',
+          aiEmoji: t['partner_emoji'] ?? '🤖',
+          rating: (t['likes_count'] ?? 0).toDouble(),
+          isOfficial: false,
+          authorName: 'Community User',
+        )).toList();
+        _loadingTopics = false;
+      });
+    } catch (e) {
+      debugPrint("Error fetching community topics: $e");
+      setState(() => _loadingTopics = false);
+    }
+  }
 
   @override
   void dispose() {
@@ -94,21 +136,26 @@ class _PeopleHomeScreenState extends State<PeopleHomeScreen> {
                 ),
                 SizedBox(
                   height: 160,
-                  child: ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    scrollDirection: Axis.horizontal,
-                    itemCount: 5, 
-                    separatorBuilder: (_, __) => const SizedBox(width: 12),
-                    itemBuilder: (context, i) {
-                      // Мок данные для карточек с лайками
-                      return _buildTrendingCard(
-                        emoji: i == 0 ? '🧨' : (i == 1 ? '🛸' : '🎭'),
-                        title: i == 0 ? 'Bank Heist' : (i == 1 ? 'Alien Contact' : 'Scene $i'),
-                        author: 'by User_$i',
-                        likes: 1240 - (i * 200),
-                      );
-                    },
-                  ),
+                  child: _loadingTopics 
+                    ? const Center(child: CircularProgressIndicator())
+                    : _communityTopics.isEmpty
+                      ? const Center(child: Text("No community topics yet"))
+                      : ListView.separated(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _communityTopics.length, 
+                        separatorBuilder: (_, __) => const SizedBox(width: 12),
+                        itemBuilder: (context, i) {
+                          final topic = _communityTopics[i];
+                          return _buildTrendingCard(
+                            emoji: topic.emoji,
+                            title: topic.title,
+                            author: topic.authorName,
+                            likes: topic.votes,
+                            topic: topic,
+                          );
+                        },
+                      ),
                 ),
               ],
             ),
@@ -161,47 +208,56 @@ Widget _buildSectionHeader(String title, {bool showSeeAll = false}) {
 }
 
   // КАРТОЧКА С ЛАЙКАМИ (Твоя гениальная идея)
-  Widget _buildTrendingCard({required String emoji, required String title, required String author, required int likes}) {
+  Widget _buildTrendingCard({
+    required String emoji, 
+    required String title, 
+    required String author, 
+    required int likes,
+    required TopicVote topic,
+  }) {
     final theme = Theme.of(context);
-    return Container(
-      width: 150,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: theme.dividerColor.withOpacity(0.08)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: AppTheme.primary.withOpacity(0.1), 
-              shape: BoxShape.circle
-            ),
-            child: Text(emoji, style: const TextStyle(fontSize: 22)),
-          ),
-          const Spacer(),
-          Text(
-            title, 
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, height: 1.1), 
-            maxLines: 1, 
-            overflow: TextOverflow.ellipsis
-          ),
-          Text(author, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              const Icon(Icons.favorite, color: Colors.redAccent, size: 14),
-              const SizedBox(width: 4),
-              Text(
-                likes.toString(), 
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900)
+    return GestureDetector(
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CommunityThemesScreen())),
+      child: Container(
+        width: 150,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: theme.cardColor,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: theme.dividerColor.withOpacity(0.08)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withOpacity(0.1), 
+                shape: BoxShape.circle
               ),
-            ],
-          ),
-        ],
+              child: Text(emoji, style: const TextStyle(fontSize: 22)),
+            ),
+            const Spacer(),
+            Text(
+              title, 
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, height: 1.1), 
+              maxLines: 1, 
+              overflow: TextOverflow.ellipsis
+            ),
+            Text(author, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Icon(Icons.favorite, color: Colors.redAccent, size: 14),
+                const SizedBox(width: 4),
+                Text(
+                  likes.toString(), 
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900)
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

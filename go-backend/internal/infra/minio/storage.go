@@ -128,6 +128,20 @@ func (s *Storage) Delete(ctx context.Context, path string) error {
 	return nil
 }
 
+// GetURL возвращает временную ссылку на файл (работает 15 минут)
+func (s *Storage) GetURL(ctx context.Context, objectPath string) (string, error) {
+	if objectPath == "" {
+		return "", nil
+	}
+
+	expires := time.Minute * 15
+	presignedURL, err := s.client.PresignedGetObject(ctx, s.bucketName, objectPath, expires, nil)
+	if err != nil {
+		return "", fmt.Errorf("minio.PresignedGetObject: %w", err)
+	}
+	return presignedURL.String(), nil
+}
+
 // HealthCheck verifies if the MinIO server is reachable.
 func (s *Storage) HealthCheck(ctx context.Context) error {
 	exists, err := s.client.BucketExists(ctx, s.bucketName)

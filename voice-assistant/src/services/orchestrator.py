@@ -9,7 +9,7 @@ class VoiceOrchestrator:
         self.upload_dir = Path("/app/input")
         self.result_dir = Path("/app/output")
 
-    async def execute_turn(self, temp_m4a: str, lang: str, rid: str):
+    async def execute_turn(self, temp_m4a: str, lang: str, rid: str, system_context: str):
         # 1. Paths
         input_wav = str(self.upload_dir / f"{rid}.wav")
         output_wav = str(self.result_dir / f"{rid}_res.wav")
@@ -21,7 +21,7 @@ class VoiceOrchestrator:
         user_text = self.stt.transcribe(input_wav, whisper_lang) or "..."
 
         # 3. LLM Process
-        ai_text = self.llm.ask(user_text, lang, rid)
+        ai_text = self.llm.ask(user_text, lang, rid, system_context)
 
         # 4. TTS Process
         self.tts.synthesize(ai_text, output_wav)
