@@ -1,0 +1,84 @@
+# Application Environment
+env: "development"
+
+# Application Metadata
+app:
+  name: "RoleTalk-API"
+  version: "1.0.0"
+
+# HTTP Server Settings
+http:
+  port: ":8080"
+  read_timeout: "10s"
+  write_timeout: "10s"
+  idle_timeout: "60s"
+  shutdown_timeout: "8s"
+
+# Telemetry and Monitoring
+observability:
+  enabled: true
+  otlp_endpoint: "tempo:4318" # Tempo (Traces)
+  loki_url: "http://localhost:3100/loki/api/v1/push" # Loki (Logs)
+  sample_rate: 1.0
+
+# Rate Limiting Settings
+rate_limit:
+  enabled: true
+  cleanup_interval: "3m"
+  global:
+    limit: 10.0
+    burst: 20
+  auth:
+    limit: 1.0
+    burst: 3
+
+# LLM Provider (Ollama)
+ollama:
+  url: "http://localhost:11434"
+  model: "qwen2.5:latest" # Или qwen2.5:7b для лучшего качества
+  
+# JWT and TTL Settings
+auth:
+  access_token_ttl: "30m"
+  refresh_token_ttl: "168h"
+  email_verification_ttl: "24h"
+  password_reset_ttl: "1h"
+
+# Third-party Identity Providers
+oauth:
+  google:
+    client_id: "" # Set via APP_GOOGLE_CLIENT_ID
+
+# Transactional Email Settings
+smtp:
+  host: "smtp.example.com"
+  port: 587
+  from_address: "noreply@roleTalk.app"
+
+# Database Settings
+postgres:
+  host: "localhost"
+  port: 5432
+  ssl_mode: "disable"
+  pool:
+    max_conns: 15
+    min_conns: 2
+    max_conn_lifetime: "30m"
+
+# S3 Compatible Storage
+minio:
+  endpoint: "localhost:9000"
+  bucket: "roletalk-storage"
+  use_ssl: false
+
+# Frontend Client URL
+client:
+  url: "http://localhost:5173"
+
+# Backend API URL
+api:
+  url: "http://localhost:8080"
+
+# Logging Settings
+logging:
+  level: "debug"

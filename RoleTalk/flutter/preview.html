@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SPEAK/SIM — превью UI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #f3f4f6;
+      --surface: #fff;
+      --text: #111827;
+      --muted: #6b7280;
+      --primary: #07c160;
+      --primary-soft: #e8f8ef;
+      --border: #e5e7eb;
+      --chat-bg: #ededed;
+      --bubble-me: #95ec69;
+      --vote-chip: #fff4e0;
+      --vote-border: #ffe0a3;
+      --tag-mint-bg: #e0f7f4;
+      --tag-mint-fg: #0d9488;
+      --tag-green-bg: #e8f5e9;
+      --tag-green-fg: #2e7d32;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+      background: #e4e6ed;
+      color: var(--text);
+      min-height: 100dvh;
+      padding: 12px;
+    }
+    .shell {
+      max-width: 420px;
+      margin: 0 auto;
+      background: var(--bg);
+      min-height: calc(100dvh - 24px);
+      box-shadow: 0 8px 24px rgba(0,0,0,.08);
+    }
+    .bar {
+      text-align: center;
+      padding: 14px;
+      font-weight: 800;
+      font-size: 15px;
+      color: var(--text);
+    }
+    .content { padding: 8px 16px 24px; }
+    h1 {
+      font-size: 1.35rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+    .lead {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      margin-top: 12px;
+    }
+    .card.top { box-shadow: 0 0 0 2px rgba(7,193,96,.15); }
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 800;
+      color: #b45309;
+      background: var(--vote-chip);
+      border: 1px solid var(--vote-border);
+      border-radius: 8px;
+      margin-bottom: 6px;
+    }
+    .row { display: flex; gap: 12px; align-items: flex-start; }
+    .emoji { font-size: 32px; line-height: 1; }
+    .title { font-size: 1.05rem; font-weight: 800; }
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .tag {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 5px 10px;
+      border-radius: 10px;
+    }
+    .tag.l { background: var(--primary-soft); color: var(--primary); }
+    .tag.t { background: var(--tag-mint-bg); color: var(--tag-mint-fg); }
+    .tag.s { background: var(--tag-green-bg); color: var(--tag-green-fg); }
+    .votes {
+      margin-top: 12px;
+      font-weight: 800;
+      color: var(--primary);
+      font-size: 0.95rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sub {
+      margin-top: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .voters-label { margin-top: 10px; font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .avatars { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+    .av {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 800;
+      color: #374151;
+    }
+    .note {
+      margin: 16px;
+      padding: 12px;
+      background: var(--primary-soft);
+      border-radius: 12px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      padding: 8px 16px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .tabs button {
+      flex: 1;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 10px;
+      border: none;
+      border-radius: 10px 10px 0 0;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .tabs button.active {
+      background: var(--surface);
+      color: var(--primary);
+      box-shadow: 0 -1px 0 var(--surface);
+    }
+    .panel { display: none; }
+    .panel.on { display: block; }
+    /* HelloTalk-style чат */
+    #p-dialog { background: var(--chat-bg); }
+    .ht-top {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .ht-av {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      background: var(--primary-soft);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+    }
+    .ht-name { font-weight: 800; font-size: 15px; }
+    .ht-on { font-size: 12px; color: var(--muted); font-weight: 600; }
+    .ht-on i {
+      display: inline-block; width: 7px; height: 7px;
+      background: var(--primary); border-radius: 50%;
+      margin-right: 5px;
+      vertical-align: middle;
+    }
+    .ht-chat { padding: 12px; min-height: 280px; }
+    .b { max-width: 88%; margin-bottom: 12px; clear: both; }
+    .b.them { float: left; }
+    .b.me { float: right; }
+    .b .p {
+      padding: 10px 14px;
+      border-radius: 18px;
+      font-size: 15px;
+      line-height: 1.4;
+      box-shadow: 0 1px 2px rgba(0,0,0,.06);
+    }
+    .b.them .p {
+      background: var(--surface);
+      border-bottom-left-radius: 4px;
+    }
+    .b.me .p {
+      background: var(--bubble-me);
+      border-bottom-right-radius: 4px;
+    }
+    .b .tm { font-size: 11px; color: var(--muted); margin-top: 4px; padding: 0 4px; }
+    .b.me .tm { text-align: right; }
+    .ht-clear { clear: both; }
+    .ht-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      box-shadow: 0 -4px 12px rgba(0,0,0,.04);
+    }
+    .ht-bar p {
+      flex: 1;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      line-height: 1.35;
+      margin: 0;
+    }
+    .ht-mic {
+      width: 52px; height: 52px;
+      border-radius: 50%;
+      background: var(--primary);
+      border: none;
+      color: #fff;
+      font-size: 24px;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <div class="bar">SPEAK / SIM</div>
+    <div class="tabs">
+      <button type="button" class="active" data-panel="p-topics">Темы</button>
+      <button type="button" data-panel="p-dialog">Диалог</button>
+    </div>
+
+    <div id="p-topics" class="panel on content">
+      <h1>Выберите тему</h1>
+      <p class="lead">Пять сценариев — нажатие на карточку в приложении открывает тему и добавляет голос. Здесь только визуал (порядок как при стартовых мок-цифрах).</p>
+
+      <div class="card top">
+        <span class="badge">Топ по голосам</span>
+        <div class="row">
+          <span class="emoji">🚉</span>
+          <div>
+            <div class="title">Заблудился в Токио</div>
+            <div class="tags">
+              <span class="tag l">A2–B1</span>
+              <span class="tag t">5–10 мин</span>
+              <span class="tag s">ориентация</span>
+            </div>
+            <div class="votes">🗳 2,2 тыс. голосов</div>
+            <div class="sub">Вы открывали: N раз — в реальном приложении из SharedPreferences</div>
+            <div class="voters-label">Голосовали</div>
+            <div class="avatars">
+              <span class="av" style="background:#b8c5f0">МЛ</span>
+              <span class="av" style="background:#ffd8a8">JO</span>
+              <span class="av" style="background:#d4c4f0">СР</span>
+              <span class="av" style="background:#b3e5fc">OT</span>
+              <span class="av" style="background:#ffccbc">ИН</span>
+              <span class="av" style="background:#c8e6c9">MC</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <span class="emoji">💼</span>
+          <div>
+            <div class="title">Переговоры о повышении</div>
+            <div class="tags">
+              <span class="tag l">B2</span>
+              <span class="tag t">8–12 мин</span>
+              <span class="tag s">убеждение</span>
+            </div>
+            <div class="votes">🗳 1,8 тыс. голосов</div>
+            <div class="voters-label">Голосовали</div>
+            <div class="avatars">
+              <span class="av" style="background:#e8b4bc">АК</span>
+              <span class="av" style="background:#b8c5f0">МЛ</span>
+              <span class="av" style="background:#ffd8a8">JO</span>
+              <span class="av" style="background:#b3e5fc">OT</span>
+              <span class="av" style="background:#c8e6c9">MC</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <span class="emoji">☕</span>
+          <div>
+            <div class="title">Кофейня и small talk</div>
+            <div class="tags">
+              <span class="tag l">A2</span>
+              <span class="tag t">4–6 мин</span>
+              <span class="tag s">small talk</span>
+            </div>
+            <div class="votes">🗳 1,5 тыс. голосов</div>
+            <div class="voters-label">Голосовали</div>
+            <div class="avatars">
+              <span class="av" style="background:#b8c5f0">МЛ</span>
+              <span class="av" style="background:#c5e8d5">ЕВ</span>
+              <span class="av" style="background:#d4c4f0">СР</span>
+              <span class="av" style="background:#b3e5fc">OT</span>
+              <span class="av" style="background:#ffccbc">ИН</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <span class="emoji">🏴‍☠️</span>
+          <div>
+            <div class="title">Таверна, 1400 год</div>
+            <div class="tags">
+              <span class="tag l">B1</span>
+              <span class="tag t">5–8 мин</span>
+              <span class="tag s">бытовая речь</span>
+            </div>
+            <div class="votes">🗳 1,2 тыс. голосов</div>
+            <div class="voters-label">Голосовали</div>
+            <div class="avatars">
+              <span class="av" style="background:#c5e8d5">ЕВ</span>
+              <span class="av" style="background:#d4c4f0">СР</span>
+              <span class="av" style="background:#ffccbc">ИН</span>
+              <span class="av" style="background:#e8b4bc">АК</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row">
+          <span class="emoji">✈️</span>
+          <div>
+            <div class="title">Миссия: аэропорт</div>
+            <div class="tags">
+              <span class="tag l">B1</span>
+              <span class="tag t">6–9 мин</span>
+              <span class="tag s">официальная речь</span>
+            </div>
+            <div class="votes">🗳 978 голосов</div>
+            <div class="voters-label">Голосовали</div>
+            <div class="avatars">
+              <span class="av" style="background:#e8b4bc">АК</span>
+              <span class="av" style="background:#c5e8d5">ЕВ</span>
+              <span class="av" style="background:#c8e6c9">MC</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="p-dialog" class="panel">
+      <div class="ht-top">
+        <span style="opacity:.5">‹</span>
+        <div class="ht-av">🧑‍✈️</div>
+        <div>
+          <div class="ht-name">Сотрудник станции</div>
+          <div class="ht-on"><i></i>онлайн</div>
+        </div>
+      </div>
+      <div class="ht-chat">
+        <div class="b them">
+          <div class="p">Good evening. Which line are you trying to find?</div>
+          <div class="tm">14:02</div>
+        </div>
+        <div class="b me">
+          <div class="p">I'm trying to get to Shibuya on the Yamanote Line.</div>
+          <div class="tm">14:03</div>
+        </div>
+        <div class="b them">
+          <div class="p">Platform 4, trains every four minutes. Mind the gap.</div>
+          <div class="tm">14:03</div>
+        </div>
+        <div class="ht-clear"></div>
+      </div>
+      <div class="ht-bar">
+        <p>Как в приложении: тап по 🎤 — старт, второй тап — отправить. Можно в любой момент.</p>
+        <button type="button" class="ht-mic" aria-label="mic">🎤</button>
+      </div>
+    </div>
+
+    <p class="note">Живой поток: <code style="background:#fff;padding:2px 6px;border-radius:4px">cd speak_sim && flutter pub get && flutter run -d chrome</code></p>
+  </div>
+  <script>
+    document.querySelectorAll('.tabs button').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        document.querySelectorAll('.tabs button').forEach(function (b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        var id = btn.getAttribute('data-panel');
+        document.querySelectorAll('.panel').forEach(function (p) { p.classList.remove('on'); });
+        document.getElementById(id).classList.add('on');
+      });
+    });
+  </script>
+</body>
+</html>

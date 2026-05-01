@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package ai.v1;
+
+option go_package = "go-backend/pkg/api/ai/v1;aiv1";
+
+// AIService handles voice processing and AI orchestration.
+service AIService {
+  // ProcessVoiceTurn takes audio and context, returning transcribed text and AI voice.
+  rpc ProcessVoiceTurn(ProcessVoiceTurnRequest) returns (ProcessVoiceTurnResponse);
+}
+
+message ProcessVoiceTurnRequest {
+  bytes audio_data = 1;
+  string language = 2;
+  string system_prompt = 3;
+  string request_id = 4;
+}
+
+message ProcessVoiceTurnResponse {
+  string user_transcription = 1;
+  string ai_response_text = 2;
+  bytes ai_audio_data = 3;
+}

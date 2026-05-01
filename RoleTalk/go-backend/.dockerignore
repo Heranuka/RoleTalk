@@ -1,0 +1,22 @@
+# Скомпилированные файлы Go
+main
+bin/
+*.exe
+*.test
+*.out
+
+# Зависимости (лучше скачивать их внутри Docker через go mod download)
+vendor/
+
+# Локальные папки данных (если ты их случайно создал там)
+postgres_data/
+s3_data/
+storage/
+
+# IDE и системные файлы
+.idea/
+.vscode/
+.DS_Store
+
+# Конфиги с секретами
+.env
