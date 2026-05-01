@@ -1,4 +1,4 @@
-// Package middleware provides HTTP middleware components for the Backforge API.
+// Package middleware provides HTTP middleware components for the RoleTalk API.
 // It includes utilities for logging, authentication, authorization, and rate limiting.
 package middleware
 

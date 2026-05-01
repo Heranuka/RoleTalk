@@ -1,9 +1,4 @@
 // Package mailer implements domain-specific email sending logic for the application.
-//
-// It acts as an adapter between the generic pkg/mailer and the specific
-// interfaces required by domain services (like auth.EmailSender).
-// It utilizes html/template and go:embed to safely render and inject dynamic data
-// into pre-compiled HTML email templates.
 package mailer
 
 import (
@@ -12,6 +7,7 @@ import (
 	"embed"
 	"fmt"
 	"html/template"
+	"io/fs" // Добавь этот импорт
 
 	"go-backend/pkg/mailer"
 )
@@ -19,23 +15,27 @@ import (
 //go:embed templates/*.html
 var templateFS embed.FS
 
-// AuthSender implements the auth.EmailSender interface.
+// AuthSender handles authentication-related emails.
 type AuthSender struct {
 	mailer    *mailer.Mailer
 	clientURL string
 	templates *template.Template
 }
 
-// templateData represents the dynamic payload injected into HTML email templates.
 type templateData struct {
 	ActionURL string
 }
 
-// NewAuthSender creates a new AuthSender instance.
-// It parses the embedded HTML templates once upon initialization.
-// Returns an error if the templates fail to parse, ensuring fail-fast behavior on startup.
+// NewAuthSender initializes the mailer and parses embedded templates using fs.Sub.
 func NewAuthSender(m *mailer.Mailer, clientURL string) (*AuthSender, error) {
-	tmpl, err := template.ParseFS(templateFS, "templates/*.html")
+	// Rooting the filesystem at "templates" folder to avoid name prefix issues.
+	// This makes template names identical to their filenames (e.g., "reset_password.html").
+	strippedFS, err := fs.Sub(templateFS, "templates")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create template sub-filesystem: %w", err)
+	}
+
+	tmpl, err := template.ParseFS(strippedFS, "*.html")
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse email templates: %w", err)
 	}
@@ -47,41 +47,39 @@ func NewAuthSender(m *mailer.Mailer, clientURL string) (*AuthSender, error) {
 	}, nil
 }
 
-// SendVerificationEmail dispatches an email containing the account activation link.
+// SendVerificationEmail dispatches an activation link.
 func (s *AuthSender) SendVerificationEmail(ctx context.Context, toEmail string, rawToken string) error {
-	subject := "Подтверждение аккаунта Backforge"
+	subject := "Confirm your RoleTalk account"
 	link := fmt.Sprintf("%s/verify-email?token=%s", s.clientURL, rawToken)
 
-	data := templateData{
-		ActionURL: link,
-	}
+	data := templateData{ActionURL: link}
 
+	// Now we use only the filename, without "templates/" prefix.
 	return s.executeAndSend(ctx, "verify_email.html", toEmail, subject, data)
 }
 
-// SendPasswordResetEmail dispatches an email containing the password reset link.
+// SendPasswordResetEmail dispatches a recovery link.
 func (s *AuthSender) SendPasswordResetEmail(ctx context.Context, toEmail string, rawToken string) error {
-	subject := "Сброс пароля Backforge"
+	subject := "Reset your RoleTalk password"
 	link := fmt.Sprintf("%s/reset-password?token=%s", s.clientURL, rawToken)
 
-	data := templateData{
-		ActionURL: link,
-	}
+	data := templateData{ActionURL: link}
 
+	// Use only the filename.
 	return s.executeAndSend(ctx, "reset_password.html", toEmail, subject, data)
 }
 
-// executeAndSend is an internal helper that executes the specified HTML template
-// with the provided data and triggers the underlying generic mailer.
+// executeAndSend renders the template and passes it to the generic mailer.
 func (s *AuthSender) executeAndSend(ctx context.Context, templateName, toEmail, subject string, data templateData) error {
 	var body bytes.Buffer
 
+	// templateName is now "reset_password.html" or "verify_email.html"
 	if err := s.templates.ExecuteTemplate(&body, templateName, data); err != nil {
-		return fmt.Errorf("failed to execute template %s: %w", templateName, err)
+		return fmt.Errorf("failed to render template %s: %w", templateName, err)
 	}
 
 	if err := s.mailer.SendHTML(ctx, toEmail, subject, body.String()); err != nil {
-		return fmt.Errorf("failed to send html email (%s): %w", templateName, err)
+		return fmt.Errorf("failed to dispatch email [%s]: %w", templateName, err)
 	}
 
 	return nil

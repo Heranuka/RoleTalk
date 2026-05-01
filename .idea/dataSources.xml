@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="DataSourceManagerImpl" format="xml" multifile-model="true">
-    <data-source source="LOCAL" name="roletalk@localhost" uuid="f6971ffb-e46d-4c11-9ea7-e44c0fc27b3d">
+    <data-source source="LOCAL" name="roletalk@localhost" uuid="1842aa40-9291-412e-8563-a5c3bd7be507">
       <driver-ref>postgresql</driver-ref>
       <synchronize>true</synchronize>
-      <configured-by-url>true</configured-by-url>
       <jdbc-driver>org.postgresql.Driver</jdbc-driver>
       <jdbc-url>jdbc:postgresql://localhost:5432/roletalk</jdbc-url>
       <jdbc-additional-properties>

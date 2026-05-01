@@ -1,4 +1,4 @@
-// Package main provides the entry point for the Backforge server.
+// Package main provides the entry point for the RoleTalk server.
 //
 // It initializes the application, sets up signal handling for graceful shutdown,
 // and runs the HTTP server.

@@ -1,4 +1,5 @@
 services:
+  # --- Database & Cache ---
   db:
     image: postgres:15-alpine
     container_name: roletalk_db
@@ -6,6 +7,8 @@ services:
       POSTGRES_USER: ${APP_POSTGRES_USER}
       POSTGRES_PASSWORD: ${APP_POSTGRES_PASSWORD}
       POSTGRES_DB: ${APP_POSTGRES_DB}
+    ports:
+      - "5432:5432"
     volumes:
       - ./postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -14,122 +17,170 @@ services:
       timeout: 5s
       retries: 5
 
-  migrations:
-    image: kukymbr/goose-docker:3.24.2
-    container_name: roletalk_migrations
-    restart: "no"
-    env_file:
-      - .env.prod
-    environment:
-      GOOSE_DRIVER: ${GOOSE_DRIVER}
-      GOOSE_DBSTRING: ${GOOSE_DBSTRING}
-      GOOSE_MIGRATION_DIR: /migrations
-      GOOSE_TABLE: ${GOOSE_TABLE}
+  redis:
+    image: redis:7-alpine
+    container_name: roletalk_redis
+    command: redis-server --requirepass ${APP_REDIS_PASSWORD}
+    ports:
+      - "6379:6379"
     volumes:
-      - ./go-backend/migrations:/migrations:ro
-    depends_on:
-      db:
-        condition: service_healthy
-    command: ["up"]
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${APP_REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: roletalk_rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${APP_RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${APP_RABBITMQ_PASSWORD}
+    ports:
+      - "5672:5672"
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_running"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # --- Storage ---
   s3:
     image: minio/minio
     container_name: roletalk_s3
     environment:
-      MINIO_ROOT_USER: admin
-      MINIO_ROOT_PASSWORD: password123
+      MINIO_ROOT_USER: ${APP_MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${APP_MINIO_SECRET_KEY}
     volumes:
       - ./s3_data:/data
     command: server /data --console-address ":9001"
     ports:
       - "9000:9000"
       - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
-  go-api:
-    build: ./go-backend
-    container_name: go_api
+  # --- Application Services ---
+  migrations:
+    image: kukymbr/goose-docker:3.24.2
+    container_name: roletalk_migrations
+    restart: "no"
+    environment:
+      GOOSE_DRIVER: postgres
+      GOOSE_DBSTRING: postgres://${APP_POSTGRES_USER}:${APP_POSTGRES_PASSWORD}@db:5432/${APP_POSTGRES_DB}?sslmode=disable
+      GOOSE_MIGRATION_DIR: /migrations
+    volumes:
+      - ./go-backend/migrations:/migrations:ro
     depends_on:
-      - db
-      - s3
-      - tempo
-      - loki
-      - migrations
+      db:
+        condition: service_healthy
+
+  assistant-api:
+    build: ./voice-assistant
+    container_name: roletalk_ai
+    expose:
+      - "50051"
+    volumes:
+      - ./voice-assistant/models:/app/models:ro
+    environment:
+      - APP_HF_TOKEN=${APP_HF_TOKEN}
+      - APP_OLLAMA_URL=http://host.docker.internal:11434
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    restart: always
+
+  go-api:
+    build:
+      context: ./go-backend
+      dockerfile: Dockerfile
+    container_name: roletalk_api
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      s3:
+        condition: service_healthy
+      assistant-api:
+        condition: service_started
+      otel-collector:
+        condition: service_started
     env_file:
       - .env
     ports:
       - "8080:8080"
     environment:
       - APP_POSTGRES_HOST=db
+      - APP_REDIS_ADDR=redis:6379
+      - APP_RABBITMQ_HOST=rabbitmq
       - APP_MINIO_ENDPOINT=s3:9000
-      - APP_AI_URL=http://assistant-api:8080/voice
+      - APP_AI_SERVICE_ADDR=assistant-api:50051
+      - APP_OBSERVABILITY_OTLP_ENDPOINT=otel-collector:4317
     restart: always
 
-  assistant-api:
-    build: ./voice-assistant
-    container_name: assistant_api
-    depends_on:
-      - go-api
+  # --- Observability Stack ---
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: roletalk_otel
+    command: ["--config=/etc/otel-config.yaml"]
     volumes:
-      - ./voice-assistant/models/whisper:/app/models/whisper
-      - ./voice-assistant/models/piper:/app/models/piper:roё
-    environment:
-      - APP_HF_TOKEN=${APP_HF_TOKEN}
-      - APP_OLLAMA_URL=${APP_OLLAMA_URL}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: always
-
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    volumes:
-      - ./go-backend/internal/infra/prometheus/prometheus.yml:/etc/prometheus:ro
+      - ./infra/otel/otel-config.yaml:/etc/otel-config.yaml:ro
     ports:
-      - "9090:9090"
+      - "4317:4317" # gRPC ingest
+      - "4318:4318" # HTTP ingest
+    depends_on:
+      - tempo
+      - loki
+
+  tempo:
+    image: grafana/tempo:latest
+    container_name: roletalk_tempo
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./infra/tempo/tempo.yaml:/etc/tempo.yaml:ro
+    # Внутренние порты не пробрасываем наружу, чтобы не конфликтовать с OTEL
 
   loki:
     image: grafana/loki:latest
-    container_name: loki
+    container_name: roletalk_loki
     ports:
       - "3100:3100"
     command: -config.file=/etc/loki/local-config.yaml
 
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
-    container_name: otel_collector
-    command: ["--config=/etc/otel-config.yaml"] # Указываем путь к конфигу явно
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: roletalk_prometheus
     volumes:
-      - ./infra/otel/otel-config.yaml:/etc/otel-config.yaml
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
-      - "4317:4317"   # OTLP gRPC receiver
-      - "4318:4318"   # OTLP HTTP receiver
-      - "13133:13133" # Health_check extension (чтобы проверять, жив ли он)
-    depends_on:
-      - tempo
-      - loki
-    restart: unless-stopped
-
-  tempo:
-    image: grafana/tempo:latest
-    container_name: tempo
-    command: ["-config.file=/etc/tempo.yaml"]
-    volumes:
-      - ./go-backend/internal/infra/tempo/tempo.yaml:/etc/tempo.yaml
-    ports:
-    - "3200:3200"
-    - "4317:4317"
-    - "4318:4318"
+      - "9090:9090"
 
   grafana:
     image: grafana/grafana:latest
-    container_name: grafana
+    container_name: roletalk_grafana
     depends_on:
       - prometheus
       - loki
       - tempo
     ports:
       - "3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
     volumes:
-      - ./go-backend/internal/infra/grafana/provisioning:/etc/grafana/provisioning
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  s3_data:

@@ -91,7 +91,7 @@ minio:
 smtp:
   host: "smtp.gmail.com"
   port: 587
-  from_address: "support@roletalk.app"
+  from_address: "retimixa@gmail.com"
 
 # Application URLs
 client:
