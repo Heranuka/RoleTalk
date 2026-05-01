@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// Repository defines the data access layer for this service.
 type Repository interface {
 	Create(ctx context.Context, t *domain.Topic) (uuid.UUID, error)
 	GetOfficial(ctx context.Context) ([]*domain.Topic, error)
@@ -17,6 +18,7 @@ type Repository interface {
 	Delete(ctx context.Context, id uuid.UUID) error
 }
 
+// Transactor defines the transaction management interface.
 type Transactor interface {
 	WithinTx(ctx context.Context, fn func(ctx context.Context) error) error
 }

@@ -1,4 +1,3 @@
-// Package domain defines core business entities and types used across the application.
 package domain
 
 import (
@@ -8,16 +7,16 @@ import (
 )
 
 // UserSkill represents the soft skills profile of a user, typically displayed as a radar chart.
-// Each skill value is expected to be a percentage ranging from 0 to 100.
+// All values are clamped between 0 and 100 representing percentage-based proficiency.
 type UserSkill struct {
-	UserID uuid.UUID
+	UserID uuid.UUID `json:"user_id"`
 
-	Empathy          int
-	Persuasion       int
-	Structure        int
-	StressResistance int
+	Empathy          int `json:"empathy"`
+	Persuasion       int `json:"persuasion"`
+	Structure        int `json:"structure"`
+	StressResistance int `json:"stress_resistance"`
 
-	UpdatedAt time.Time
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // NewUserSkill initializes a new skill profile for a user with default values.
@@ -32,21 +31,8 @@ func NewUserSkill(userID uuid.UUID) *UserSkill {
 	}
 }
 
-// Validate checks if all skill values are within the allowed range (0-100).
-func (s *UserSkill) Validate() bool {
-	return s.isValidRange(s.Empathy) &&
-		s.isValidRange(s.Persuasion) &&
-		s.isValidRange(s.Structure) &&
-		s.isValidRange(s.StressResistance)
-}
-
-// isValidRange is a private helper to check percentage boundaries.
-func (s *UserSkill) isValidRange(val int) bool {
-	return val >= 0 && val <= 100
-}
-
-// ApplyProgress updates skill values based on increments.
-// It ensures that the resulting values do not exceed 100 or drop below 0.
+// ApplyProgress updates skill values based on AI-calculated increments.
+// It ensures that the resulting values are strictly within the [0, 100] range.
 func (s *UserSkill) ApplyProgress(emp, pers, struc, stress int) {
 	s.Empathy = s.clamp(s.Empathy + emp)
 	s.Persuasion = s.clamp(s.Persuasion + pers)
@@ -55,7 +41,6 @@ func (s *UserSkill) ApplyProgress(emp, pers, struc, stress int) {
 	s.UpdatedAt = time.Now()
 }
 
-// clamp ensures the value stays between 0 and 100.
 func (s *UserSkill) clamp(val int) int {
 	if val > 100 {
 		return 100

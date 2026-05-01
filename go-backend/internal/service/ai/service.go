@@ -5,18 +5,15 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"go-backend/internal/models/domain"
 	"io"
-	"mime/multipart"
-	"net/http"
-	"time"
 
 	"go-backend/internal/logger"
+	"go-backend/internal/models/domain"
 
 	"github.com/google/uuid"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -29,8 +26,7 @@ type Service struct {
 	topicRepo           TopicRepository
 	practiceSessionRepo PracticeSessionRepository
 	prompt              PromptService
-	httpClient          *http.Client
-	pythonURL           string
+	provider            Provider
 	log                 *zap.SugaredLogger
 }
 
@@ -41,7 +37,7 @@ func NewService(
 	topicRepo TopicRepository,
 	practiceSessionRepo PracticeSessionRepository,
 	prompt PromptService,
-	pythonURL string,
+	provider Provider,
 	log *zap.SugaredLogger,
 ) *Service {
 	return &Service{
@@ -50,43 +46,47 @@ func NewService(
 		topicRepo:           topicRepo,
 		practiceSessionRepo: practiceSessionRepo,
 		prompt:              prompt,
-		httpClient: &http.Client{
-			Transport: otelhttp.NewTransport(http.DefaultTransport),
-			Timeout:   90 * time.Second,
-		},
-		pythonURL: pythonURL,
-		log:       log,
+		provider:            provider,
+		log:                 log,
 	}
 }
 
 // ProcessVoiceTurn orchestrates the full AI interaction loop.
-// It now automatically retrieves the linked TopicID from the session to ensure data integrity.
+// It returns transcribed user text, AI response text, and the URL to the AI voice message.
 func (s *Service) ProcessVoiceTurn(
 	ctx context.Context,
-	userID, sessionID uuid.UUID, // topicID убран из аргументов
+	userID, sessionID uuid.UUID,
 	practiceLang string,
 	audioData io.Reader,
 ) (string, string, string, error) {
-	ctx, span := tracer.Start(ctx, "Service.AI.ProcessVoiceTurn")
+	ctx, span := tracer.Start(ctx, "Service.ProcessVoiceTurn",
+		trace.WithAttributes(
+			attribute.String("user.id", userID.String()),
+			attribute.String("session.id", sessionID.String()),
+		),
+	)
 	defer span.End()
 
 	log := logger.FromContext(ctx, s.log)
-	requestID := span.SpanContext().TraceID().String()
 
-	// 1. FIRST STEP: Fetch the session to find the associated TopicID
-	// In production, we must ensure the session belongs to the user
+	// 1. Fetch Context
 	session, err := s.practiceSessionRepo.GetByID(ctx, sessionID)
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to fetch session context: %w", err)
+		return "", "", "", fmt.Errorf("session lookup: %w", err)
 	}
 
-	// 2. SECOND STEP: Get detailed topic info using the ID found in the session
 	topic, err := s.topicRepo.GetByID(ctx, session.TopicID)
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to fetch topic details: %w", err)
+		return "", "", "", fmt.Errorf("topic lookup: %w", err)
 	}
 
-	// 3. Render the System Prompt (character instructions)
+	// 2. Buffer Audio (Required for multiple reads)
+	audioBytes, err := io.ReadAll(audioData)
+	if err != nil {
+		return "", "", "", fmt.Errorf("audio read: %w", err)
+	}
+
+	// 3. System Prompt
 	params := domain.RoleplayParams{
 		PartnerRole:  topic.PartnerRole,
 		Description:  s.ptrString(topic.Description),
@@ -98,157 +98,67 @@ func (s *Service) ProcessVoiceTurn(
 
 	systemPrompt, err := s.prompt.RenderRoleplay(params)
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to render AI instructions: %w", err)
+		return "", "", "", fmt.Errorf("prompt generation: %w", err)
 	}
 
-	span.SetAttributes(
-		attribute.String("user.id", userID.String()),
-		attribute.String("session.id", sessionID.String()),
-		attribute.String("topic.id", session.TopicID.String()),
-	)
+	// 4. Archive User Audio (Concurrent)
+	userAudioURLChan := make(chan string, 1)
+	go func() {
+		filename := fmt.Sprintf("users/%s/sessions/%s/%s.m4a", userID, sessionID, uuid.New())
+		url, uploadErr := s.storage.Upload(ctx, "voice-history", filename, bytes.NewReader(audioBytes))
+		if uploadErr != nil {
+			log.Errorw("s3 upload failed", "error", uploadErr)
+		}
+		userAudioURLChan <- url
+	}()
 
-	// STEP 1: Buffer the audio data to memory (required for dual-read: S3 + Python API)
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, audioData); err != nil {
-		return "", "", "", fmt.Errorf("failed to buffer audio stream: %w", err)
-	}
-	audioBytes := buf.Bytes()
-
-	// STEP 2: Upload User Audio to S3 for history tracking
-	userFilename := fmt.Sprintf("users/%s/sessions/%s/%s.m4a", userID, sessionID, uuid.New())
-	userAudioURL, err := s.storage.Upload(ctx, "voice-history", userFilename, bytes.NewReader(audioBytes))
+	// 5. Invoke AI Provider (Strict assignment according to interface)
+	// Order: UserText, AIText, AIAudioBytes, err
+	userTranscription, aiText, aiAudioBytes, err := s.provider.ProcessVoiceTurn(ctx, audioBytes, practiceLang, systemPrompt)
 	if err != nil {
-		log.Errorw("failed to archive user audio", "error", err)
-		return "", "", "", fmt.Errorf("%w: %v", ErrStorageUploadFailed, err)
+		return "", "", "", fmt.Errorf("ai provider error: %w", err)
 	}
 
-	// STEP 3: Invoke Python AI Service (STT -> LLM -> TTS)
-	// We pass the dynamic 'systemPrompt' rendered by the engine
-	aiText, aiAudioBytes, userText, err := s.callPythonAI(ctx, audioBytes, practiceLang, requestID, systemPrompt)
-	if err != nil {
-		span.RecordError(err)
-		return "", "", "", fmt.Errorf("%w: %v", ErrAIProcessingFailed, err)
-	}
+	userAudioURL := <-userAudioURLChan
 
-	// STEP 4: Persist User Message (Transcribed by Whisper)
-	if err := s.messages.SaveMessage(ctx, sessionID, "user", userText, userAudioURL); err != nil {
+	// 6. Persist Messages
+	if err := s.messages.SaveMessage(ctx, sessionID, domain.RoleUser, userTranscription, userAudioURL); err != nil {
 		log.Errorw("failed to save user message", "error", err)
 	}
 
-	// STEP 5: Upload AI Response Audio to S3
+	// 7. Store AI Voice Response
 	aiResFilename := fmt.Sprintf("ai/%s/%s.wav", sessionID, uuid.New())
 	aiAudioURL, err := s.storage.Upload(ctx, "ai-responses", aiResFilename, bytes.NewReader(aiAudioBytes))
 	if err != nil {
-		log.Errorw("failed to upload ai audio", "error", err)
+		return userTranscription, aiText, "", fmt.Errorf("ai s3 upload: %w", err)
 	}
 
-	// STEP 6: Persist AI Message (Generated by LLM)
-	if err := s.messages.SaveMessage(ctx, sessionID, "ai", aiText, aiAudioURL); err != nil {
+	if err := s.messages.SaveMessage(ctx, sessionID, domain.RoleAssistant, aiText, aiAudioURL); err != nil {
 		log.Errorw("failed to save ai message", "error", err)
 	}
 
-	log.Infow("roleplay turn processed successfully",
-		"user_id", userID,
-		"session_id", sessionID,
-		"ai_role", topic.PartnerRole,
-	)
+	log.Infow("turn processed successfully", "session_id", sessionID)
 
-	return userText, aiText, aiAudioURL, nil
+	return userTranscription, aiText, aiAudioURL, nil
 }
 
-// Helper to safely extract string from pointers
+// GetSessionHistory retrieves the dialog history for a specific session.
+// It delegates the call to the underlying MessageService.
+// This is required to satisfy the MessageHandler interface.
+func (s *Service) GetSessionHistory(ctx context.Context, sessionID uuid.UUID) ([]*domain.Message, error) {
+	ctx, span := tracer.Start(ctx, "Service.AI.GetSessionHistory")
+	defer span.End()
+
+	res, err := s.messages.GetSessionHistory(ctx, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get session history: %w", err)
+	}
+	return res, nil
+}
+
 func (s *Service) ptrString(p *string) string {
 	if p == nil {
 		return ""
 	}
 	return *p
-}
-
-// GetSessionHistory retrieves dialog history.
-// This method implements the interface required by the message.Handler.
-func (s *Service) GetSessionHistory(ctx context.Context, sessionID uuid.UUID) ([]*domain.Message, error) {
-	ctx, span := tracer.Start(ctx, "Service.AI.GetSessionHistory")
-	defer span.End()
-
-	// We delegate the database call to the dedicated message service
-	return s.messages.GetSessionHistory(ctx, sessionID)
-}
-
-// callPythonAI performs a multipart POST request to the Python AI microservice.
-// It sends the audio bytes along with the practice language and the specific
-// roleplay system context (character instructions).
-func (s *Service) callPythonAI(
-	ctx context.Context,
-	audio []byte,
-	lang string,
-	requestID string,
-	systemPrompt string, // New parameter for roleplay instructions
-) (string, []byte, string, error) {
-	ctx, span := tracer.Start(ctx, "Service.AI.callPythonAI")
-	defer span.End()
-
-	// 1. Prepare Multipart Form Data
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	// Create the "file" field expected by FastAPI's UploadFile
-	part, err := writer.CreateFormFile("file", "input.m4a")
-	if err != nil {
-		return "", nil, "", fmt.Errorf("failed to create multipart form: %w", err)
-	}
-
-	if _, err := part.Write(audio); err != nil {
-		return "", nil, "", fmt.Errorf("failed to write audio to multipart form: %w", err)
-	}
-
-	// Close the writer to set the terminating boundary
-	writer.Close()
-
-	// 2. Prepare the HTTP Request
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.pythonURL, body)
-	if err != nil {
-		return "", nil, "", fmt.Errorf("failed to create http request: %w", err)
-	}
-
-	// 3. Set Headers
-	// Content-Type must include the boundary generated by the multipart writer
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-
-	// Tracing and Context Headers
-	req.Header.Set("X-Request-ID", requestID)
-	req.Header.Set("X-Practice-Language", lang)
-
-	// IMPORTANT: Pass the system context so the AI knows who it is playing
-	req.Header.Set("X-System-Context", systemPrompt)
-
-	// Add attributes to the span for Observability
-	span.SetAttributes(
-		attribute.String("http.url", s.pythonURL),
-		attribute.Int("audio.size", len(audio)),
-	)
-
-	// 4. Execute Request
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return "", nil, "", fmt.Errorf("ai microservice execution failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// 5. Handle Response
-	if resp.StatusCode != http.StatusOK {
-		// Log error response from Python if possible
-		return "", nil, "", fmt.Errorf("ai server returned error status: %d", resp.StatusCode)
-	}
-
-	// Extract STT and LLM metadata from headers (as configured in Python script)
-	userText := resp.Header.Get("X-STT-Transcription")
-	aiText := resp.Header.Get("X-LLM-Response")
-
-	// Read the binary response body (the generated .wav file)
-	aiAudio, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", nil, "", fmt.Errorf("failed to read ai audio response: %w", err)
-	}
-
-	return aiText, aiAudio, userText, nil
 }

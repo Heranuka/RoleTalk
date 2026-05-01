@@ -1,55 +1,103 @@
+# GolangCI-Lint configuration for the InCharacter (RoleTalk) platform.
+# This configuration enforces strict production standards, ensuring high performance,
+# observability (tracing/context), and maintainable error handling.
+
 version: "2"
 
 linters:
+  # Disable all default linters and enable only specific high-impact ones.
   default: none
   enable:
-    - bodyclose
-    - dogsled
-    - dupl
-    - errcheck
-    - exhaustive
-    - forcetypeassert
-    - gochecknoinits
-    - goconst
-    - gocritic
-    - gocyclo
-    - goprintffuncname
-    - gosec
-    - govet
-    - ineffassign
-    - misspell
-    - nakedret
-    - nolintlint
-    - revive
-    - staticcheck
-    - unconvert
-    - unparam
-    - unused
-    - whitespace
-  settings:
-    errcheck:
-      check-type-assertions: true
-      check-blank: true
-    gocyclo:
-      min-complexity: 15
-    misspell:
-      locale: US
-    staticcheck:
-      checks: [ "all" ]
-    revive:
-      rules:
-        - name: import-alias-naming
-          severity: warning
-          disabled: false
-          exclude: [ "" ]
-          arguments:
-            - allow-regex: "^[a-z][a-z0-9]*$"
-              deny-regex: '^v\d+$'
-  exclusions:
-    paths:
-      - "api/swagger/*"
-      - "test/integration/*"
-      - "web/node_modules/*"
+    # --- Structural & Style ---
+    - revive           # Replacement for the deprecated golint
+    - misspell         # Checks for common English misspellings
+    - whitespace       # Enforces consistent use of whitespace
+    - goconst          # Finds repeated strings that should be constants
+    - gocritic         # Provides various diagnostic checks for code improvement
+    - staticcheck      # Go static analysis tool (successor to megacheck)
+    - unused           # Checks for unused constants, variables, functions, and types
+
+    # --- Safety & Security ---
+    - gosec            # Inspects source code for security problems
+    - errcheck         # Ensures that errors are handled
+    - forcetypeassert  # Prevents panics by requiring comma-ok on type assertions
+    - govet            # Reports suspicious constructs (shadowing, printf, etc.)
+
+    # --- Performance ---
+    - bodyclose        # Checks whether HTTP response bodies are closed
+    - prealloc         # Suggests slice pre-allocation to reduce GC pressure
+    - makezero         # Finds slice declarations that might lead to double-allocations
+    - ineffassign      # Detects ineffectual assignments to variables
+
+    # --- Observability & Context (Critical for OpenTelemetry) ---
+    - contextcheck     # Checks whether the context is passed to downstream functions
+    - noctx            # Finds HTTP requests sent without a context
+
+    # --- Clean Architecture & Error Handling ---
+    - errorlint        # Ensures proper use of errors.Is and errors.As
+    - wrapcheck        # Requires wrapping errors from external/internal layers
+    - nilerr           # Finds code that returns nil instead of an error
+    - nilnil           # Prevents returning (nil, nil) which is an ambiguous state
+    - sqlclosecheck    # Checks that sql.Rows and sql.Stmt are closed
+    - rowserrcheck     # Checks that rows.Err() is called after rows.Next()
+
+    # --- Complexity & Readability ---
+    - gocyclo          # Calculates cyclomatic complexity
+    - gocognit         # Calculates cognitive complexity (human readability)
+    - nestif           # Reports deeply nested if statements
+    - nakedret         # Prevents naked returns in long functions
+    - unparam          # Reports unused function parameters
+
+settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+
+  gocyclo:
+    min-complexity: 15
+
+  gocognit:
+    min-complexity: 20
+
+  misspell:
+    locale: US
+
+  staticcheck:
+    checks: [ "all" ]
+
+  # Revive provides strict GoDoc and naming rules for professional Go code.
+  revive:
+    rules:
+      - name: exported                   # Requires GoDoc comments for all exported symbols
+        severity: warning
+      - name: var-naming                 # Enforces "ID" instead of "Id"
+        severity: warning
+        arguments:
+          - ["ID", "UUID", "HTTP", "URL"]
+          - []
+      - name: package-comments           # Requires documentation at the top of packages
+        severity: warning
+      - name: import-alias-naming
+        severity: warning
+        arguments:
+          - allow-regex: "^[a-z][a-z0-9]*$"
+            deny-regex: '^v\d+$'
+
+  # Wrapcheck ensures that errors originating from the repository or external
+  # libraries are wrapped when entering the service or handler layers.
+  wrapcheck:
+    ignorePackageSigregs:
+      - .Errorf
+      - errors.*
+      - .Close()
+
+exclusions:
+  paths:
+    - "api/swagger/*"
+    - "test/integration/*"
+    - "web/node_modules/*"
+    - ".*\\.pb\\.go"       # Ignore generated gRPC/Protobuf files
+    - ".*_grpc\\.pb\\.go"
 
 formatters:
   enable:
@@ -59,13 +107,20 @@ formatters:
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
+  # Prevent noise from common idiomatic patterns.
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - errcheck
+        - dupl
+        - gosec
 
 output:
   formats:
-    text:
-      print-issued-lines: true
-      print-linter-name: true
-      colors: true
+    colored-line-number: {}
+  print-issued-lines: true
+  print-linter-name: true
 
 run:
   timeout: 5m

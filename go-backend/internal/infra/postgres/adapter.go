@@ -8,6 +8,7 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -48,7 +49,7 @@ func NewPoolAdapter(pool *pgxpool.Pool) *PoolAdapter {
 func (p *PoolAdapter) Begin(ctx context.Context) (transactor.Tx, error) {
 	tx, err := p.pool.Begin(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	return &TxAdapter{tx: tx}, nil
 }
@@ -72,7 +73,11 @@ type TxAdapter struct {
 //   - pgconn.CommandTag: metadata about the executed command.
 //   - error: any error encountered during execution.
 func (t *TxAdapter) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
-	return t.tx.Exec(ctx, sql, args...)
+	tag, err := t.tx.Exec(ctx, sql, args...)
+	if err != nil {
+		return tag, fmt.Errorf("failed to execute query: %w", err)
+	}
+	return tag, nil
 }
 
 // Query executes a SQL query that returns multiple rows.
@@ -86,7 +91,11 @@ func (t *TxAdapter) Exec(ctx context.Context, sql string, args ...any) (pgconn.C
 //   - pgx.Rows: the result set rows.
 //   - error: any error encountered during execution.
 func (t *TxAdapter) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-	return t.tx.Query(ctx, sql, args...)
+	rows, err := t.tx.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute query: %w", err)
+	}
+	return rows, nil
 }
 
 // QueryRow executes a SQL query expected to return a single row.
@@ -110,7 +119,10 @@ func (t *TxAdapter) QueryRow(ctx context.Context, sql string, args ...any) pgx.R
 // Returns:
 //   - error: any error encountered during commit.
 func (t *TxAdapter) Commit(ctx context.Context) error {
-	return t.tx.Commit(ctx)
+	if err := t.tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+	return nil
 }
 
 // Rollback rolls back the transaction.
@@ -121,5 +133,8 @@ func (t *TxAdapter) Commit(ctx context.Context) error {
 // Returns:
 //   - error: any error encountered during rollback.
 func (t *TxAdapter) Rollback(ctx context.Context) error {
-	return t.tx.Rollback(ctx)
+	if err := t.tx.Rollback(ctx); err != nil {
+		return fmt.Errorf("failed to rollback transaction: %w", err)
+	}
+	return nil
 }

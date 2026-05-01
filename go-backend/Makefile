@@ -1,71 +1,90 @@
-# Makefile for backforge project
-# Equivalent to the provided Taskfile.yml
+# Makefile for the RoleTalk (InCharacter) Backend.
+# This file provides a robust set of commands for development, testing, and deployment.
 
-APP_NAME := backforge
-COMPOSE := docker compose
-GO := go
+# --- Variables ---
+APP_NAME      := roletalk
+GO_DIR        := .
+BIN_DIR       := $(GO_DIR)/bin
+CMD_PATH      := $(GO_DIR)/cmd/app/main.go
+PROTO_DIR     := api/proto
+COMPOSE       := docker-compose
+GO            := go
 
-.PHONY: help up up-build down ps logs restart migrate-up migrate-down tidy fmt test test-integration build swagger mocks lint lint-fix fmt-ci
+# --- Help ---
+.PHONY: help
+help: ## Display this help screen
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-help:
-	@task --list
-
-# Docker Compose tasks
-up:
+# --- Docker Environment ---
+.PHONY: up up-build down restart ps logs
+up: ## Start all containers in the background
 	$(COMPOSE) up -d
 
-up-build:
+up-build: ## Rebuild and start all containers
 	$(COMPOSE) up -d --build
 
-down:
+down: ## Stop and remove all containers and volumes
 	$(COMPOSE) down -v
 
-ps:
-	$(COMPOSE) ps
-
-logs:
-	$(COMPOSE) logs -f --tail=200
-
-restart:
+restart: ## Restart all services
 	$(COMPOSE) restart
 
-# Migrations via migrator
-migrate-up:
+ps: ## List running containers
+	$(COMPOSE) ps
+
+logs: ## Follow logs from all containers
+	$(COMPOSE) logs -f --tail=200
+
+# --- Database & Migrations ---
+.PHONY: migrate-up migrate-down
+migrate-up: ## Run database migrations upwards
 	$(COMPOSE) run --rm migrator up
 
-migrate-down:
+migrate-down: ## Rollback database migrations
 	$(COMPOSE) run --rm migrator down
 
-# Go tasks
-tidy:
-	$(GO) mod tidy
+# --- Code Generation ---
+.PHONY: gen-proto swagger mocks
+gen-proto: ## Generate Go and gRPC code from Proto files
+	@echo "Generating gRPC code..."
+	protoc --go_out=$(GO_DIR) --go_opt=paths=source_relative \
+		--go-grpc_out=$(GO_DIR) --go-grpc_opt=paths=source_relative \
+		$(PROTO_DIR)/ai/v1/ai.proto
+	@echo "Generating Python gRPC code..."
+	python3 -m grpc_tools.protoc -Iapi/proto --python_out=voice-assistant/src/api --grpc_python_out=voice-assistant/src/api api/proto/ai/v1/ai.proto
 
-fmt:
-	gofmt -w .
+swagger: ## Generate Swagger (OpenAPI) documentation
+	swag init -g $(CMD_PATH) -o $(GO_DIR)/api/swagger --parseDependency --parseInternal
 
-test:
-	$(GO) test ./...
+mocks: ## Generate mocks for testing (interfaces required)
+	cd $(GO_DIR) && $(GO) generate ./...
 
-test-integration:
-	$(GO) test -v -tags=integration ./test/integration/...
+# --- Quality Assurance ---
+.PHONY: lint lint-fix fmt test test-integration
+lint: ## Run golangci-lint based on .golangci.yml
+	cd $(GO_DIR) && golangci-lint run ./...
 
-build:
-	mkdir -p bin
-	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -o bin/server ./cmd/server
+lint-fix: ## Run golangci-lint and apply safe fixes
+	cd $(GO_DIR) && golangci-lint run --fix ./...
 
-# Generation
-swagger:
-	swag init -g cmd/server/main.go -o api/swagger
+fmt: ## Format Go source code
+	cd $(GO_DIR) && $(GO) fmt ./...
 
-mocks:
-	$(GO) generate ./...
+test: ## Run unit tests
+	cd $(GO_DIR) && $(GO) test -v -race -cover ./...
 
-# Linting
-lint:
-	golangci-lint run ./...
+test-integration: ## Run integration tests using the 'integration' build tag
+	cd $(GO_DIR) && $(GO) test -v -tags=integration ./test/integration/...
 
-lint-fix:
-	golangci-lint run --fix ./...
+# --- Build & Maintenance ---
+.PHONY: tidy build clean
+tidy: ## Clean up and verify go.mod dependencies
+	cd $(GO_DIR) && $(GO) mod tidy
 
-fmt-ci:
-	golangci-lint fmt ./...
+build: ## Build a statically linked Linux AMD64 binary
+	mkdir -p $(BIN_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 $(GO) build -o $(BIN_DIR)/server $(CMD_PATH)
+
+clean: ## Remove build artifacts and temporary files
+	rm -rf $(BIN_DIR)
+	rm -rf $(GO_DIR)/api/swagger

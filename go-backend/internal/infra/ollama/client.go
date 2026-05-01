@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"time"
@@ -19,7 +20,7 @@ import (
 
 var tracer = otel.Tracer("internal/infra/ollama")
 
-// Client handles requests to the Ollama API.
+// Client handles requests to the Ollama API with integrated observability.
 type Client struct {
 	url        string
 	model      string
@@ -28,13 +29,14 @@ type Client struct {
 }
 
 // NewClient creates a new Ollama client instance.
+// Timeout is set to 60s as complex transcript analysis can be resource-intensive.
 func NewClient(url, model string, log *zap.SugaredLogger) *Client {
 	return &Client{
 		url:   url,
 		model: model,
 		log:   log,
 		httpClient: &http.Client{
-			Timeout: 45 * time.Second, // Evaluations can take time
+			Timeout: 60 * time.Second,
 		},
 	}
 }
@@ -44,8 +46,10 @@ type ChatRequest struct {
 	Model    string    `json:"model"`
 	Messages []Message `json:"messages"`
 	Stream   bool      `json:"stream"`
+	Format   string    `json:"format,omitempty"` // "json" forces the model to output valid JSON
 }
 
+// Message represents a single turn in the AI conversation.
 type Message struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
@@ -56,7 +60,8 @@ type ChatResponse struct {
 	Message Message `json:"message"`
 }
 
-// AnalyzeTranscript sends a prompt to the LLM and parses the resulting JSON.
+// AnalyzeTranscript sends a prompt to the LLM and extracts skill scores from the response.
+// It uses regex as a fallback to ensure JSON can be parsed even if the LLM adds conversational filler.
 func (c *Client) AnalyzeTranscript(ctx context.Context, prompt string) (map[string]int, error) {
 	ctx, span := tracer.Start(ctx, "Ollama.AnalyzeTranscript")
 	defer span.End()
@@ -69,6 +74,7 @@ func (c *Client) AnalyzeTranscript(ctx context.Context, prompt string) (map[stri
 			{Role: "user", Content: prompt},
 		},
 		Stream: false,
+		Format: "json", // Instruct Ollama to enforce JSON output
 	}
 
 	data, err := json.Marshal(reqBody)
@@ -87,10 +93,12 @@ func (c *Client) AnalyzeTranscript(ctx context.Context, prompt string) (map[stri
 		span.RecordError(err)
 		return nil, fmt.Errorf("http execute: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("ollama returned status: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		log.Errorw("ollama returned error status", "status", resp.StatusCode, "body", string(body))
+		return nil, fmt.Errorf("ollama error status: %d", resp.StatusCode)
 	}
 
 	var chatResp ChatResponse
@@ -98,21 +106,25 @@ func (c *Client) AnalyzeTranscript(ctx context.Context, prompt string) (map[stri
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 
-	// 1. Extract JSON from LLM response using Regex
-	// LLMs often wrap JSON in ```json ... ``` blocks.
-	re := regexp.MustCompile(`\{.*\}`)
+	// Extract JSON using multi-line aware regex
+	// (?s) flag allows the dot (.) to match newlines
+	re := regexp.MustCompile(`(?s)\{.*\}`)
 	cleanJSON := re.FindString(chatResp.Message.Content)
 	if cleanJSON == "" {
-		log.Errorw("LLM failed to return valid JSON", "raw_content", chatResp.Message.Content)
+		log.Errorw("LLM response contains no JSON object", "content", chatResp.Message.Content)
 		return nil, fmt.Errorf("no valid JSON found in LLM response")
 	}
 
-	// 2. Parse the cleaned JSON into a map
 	var scores map[string]int
 	if err := json.Unmarshal([]byte(cleanJSON), &scores); err != nil {
+		log.Errorw("failed to unmarshal scores", "json", cleanJSON, "error", err)
 		return nil, fmt.Errorf("unmarshal scores: %w", err)
 	}
 
-	span.SetAttributes(attribute.Int("response.length", len(chatResp.Message.Content)))
+	span.SetAttributes(
+		attribute.String("llm.model", c.model),
+		attribute.Int("scores.count", len(scores)),
+	)
+
 	return scores, nil
 }

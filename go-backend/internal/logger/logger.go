@@ -1,12 +1,10 @@
-// Package logger provides a production-ready Zap logger for internal use.
-//
-// It supports structured logging, environment-specific configs, and optional
-// contextual fields for request tracing.
+// Package logger provides a production-ready Zap logger with OpenTelemetry integration.
 package logger
 
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/go-chi/chi/v5/middleware"
 	"go.opentelemetry.io/otel/trace"
@@ -14,88 +12,86 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-// Config defines the logger configuration.
+// Config defines the specific parameters needed to initialize the logger.
+// Keeping this local prevents circular dependencies with the global config package.
 type Config struct {
-	Environment string   // "production" or "development"
-	Level       string   // debug, info, warn, error
-	OutputPaths []string // optional
-	ErrorOutput []string // optional
+	Environment string
+	Level       string
+	OTelCore    zapcore.Core
 }
 
-// New creates a new *zap.SugaredLogger based on the provided config.
-//
-// It does NOT set any global variables. Designed for DI usage in handlers/services.
+// New creates a new *zap.SugaredLogger.
+// It uses a "Tee" core to send logs to both stdout and OpenTelemetry simultaneously.
 func New(cfg Config) (*zap.SugaredLogger, error) {
-	var zapCfg zap.Config
+	var encoderCfg zapcore.EncoderConfig
+	var encoder zapcore.Encoder
 
-	switch cfg.Environment {
-	case "production":
-		zapCfg = zap.NewProductionConfig()
-		zapCfg.Encoding = "json"
-		if len(cfg.OutputPaths) > 0 {
-			zapCfg.OutputPaths = cfg.OutputPaths
-		} else {
-			zapCfg.OutputPaths = []string{"stdout"}
-		}
-		if len(cfg.ErrorOutput) > 0 {
-			zapCfg.ErrorOutputPaths = cfg.ErrorOutput
-		} else {
-			zapCfg.ErrorOutputPaths = []string{"stderr"}
-		}
-		zapCfg.EncoderConfig.TimeKey = "timestamp"
-		zapCfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-	default:
-		zapCfg = zap.NewDevelopmentConfig()
-		zapCfg.Encoding = "console"
-		zapCfg.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
-		zapCfg.OutputPaths = []string{"stdout"}
-		zapCfg.ErrorOutputPaths = []string{"stderr"}
+	if cfg.Environment == "production" {
+		encoderCfg = zap.NewProductionEncoderConfig()
+		// Standards for Loki/Tempo correlation
+		encoderCfg.TimeKey = "timestamp"
+		encoderCfg.EncodeTime = zapcore.ISO8601TimeEncoder
+		encoder = zapcore.NewJSONEncoder(encoderCfg)
+	} else {
+		encoderCfg = zap.NewDevelopmentEncoderConfig()
+		encoderCfg.EncodeLevel = zapcore.CapitalColorLevelEncoder
+		encoder = zapcore.NewConsoleEncoder(encoderCfg)
 	}
 
-	if cfg.Level != "" {
-		if lvl, err := zapcore.ParseLevel(cfg.Level); err == nil {
-			zapCfg.Level = zap.NewAtomicLevelAt(lvl)
-		} else {
-			return nil, fmt.Errorf("invalid log level: %w", err)
-		}
-	}
-
-	zapLogger, err := zapCfg.Build()
+	level, err := zapcore.ParseLevel(cfg.Level)
 	if err != nil {
-		return nil, fmt.Errorf("build logger: %w", err)
+		return nil, fmt.Errorf("failed to parse log level: %w", err)
 	}
 
-	return zapLogger.Sugar(), nil
+	// Create the standard output core
+	stdoutCore := zapcore.NewCore(encoder, zapcore.AddSync(os.Stdout), level)
+
+	// Combine stdout with OTelCore if provided
+	finalCore := stdoutCore
+	if cfg.OTelCore != nil {
+		finalCore = zapcore.NewTee(stdoutCore, cfg.OTelCore)
+	}
+
+	// AddCaller allows us to see the file and line number in logs
+	l := zap.New(finalCore, zap.AddCaller())
+
+	return l.Sugar(), nil
 }
 
-// Sync flushes any buffered logs. Call before application exit.
-func Sync(log *zap.SugaredLogger) {
-	if log != nil {
-		_ = log.Sync() //nolint:errcheck
+// Sync flushes any buffered log entries.
+// Should be called via defer in main.go to ensure all logs reach the collector.
+func Sync(l *zap.SugaredLogger) {
+	if l != nil {
+		_ = l.Sync()
 	}
 }
 
-// FromContext returns a logger enriched with request_id, trace_id, and span_id.
+// FromContext extracts RequestID and OpenTelemetry Tracing IDs from the context.
+// This allows Loki logs to be directly linked to Tempo traces in Grafana.
 func FromContext(ctx context.Context, l *zap.SugaredLogger) *zap.SugaredLogger {
 	if l == nil {
 		return zap.NewNop().Sugar()
 	}
 
-	newLog := l
+	reqID := middleware.GetReqID(ctx)
+	span := trace.SpanFromContext(ctx)
+	sc := span.SpanContext()
 
-	// 1. Extract Request ID
-	if reqID := middleware.GetReqID(ctx); reqID != "" {
-		newLog = newLog.With("request_id", reqID)
+	// If no metadata is found, return the logger as is
+	if reqID == "" && !sc.IsValid() {
+		return l
 	}
 
-	// 2. Extract Tracing metadata (TraceID and SpanID)
-	span := trace.SpanFromContext(ctx)
-	if sc := span.SpanContext(); sc.IsValid() {
-		newLog = newLog.With(
+	fields := make([]interface{}, 0, 6)
+	if reqID != "" {
+		fields = append(fields, "request_id", reqID)
+	}
+	if sc.IsValid() {
+		fields = append(fields,
 			"trace_id", sc.TraceID().String(),
 			"span_id", sc.SpanID().String(),
 		)
 	}
 
-	return newLog
+	return l.With(fields...)
 }

@@ -12,6 +12,7 @@ package render
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 )
 
@@ -38,7 +39,11 @@ func JSON(w http.ResponseWriter, status int, data any) error {
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
 
-	return enc.Encode(data)
+	if err := enc.Encode(data); err != nil {
+		return fmt.Errorf("encode error: %w", err)
+	}
+
+	return nil
 }
 
 // OK writes a JSON response with HTTP status 200 (OK).

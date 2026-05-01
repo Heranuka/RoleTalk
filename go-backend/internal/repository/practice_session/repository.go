@@ -94,7 +94,7 @@ func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*domain.Practic
 			return nil, ErrSessionNotFound
 		}
 		r.handleError(ctx, err, "failed to get session")
-		return nil, err
+		return nil, fmt.Errorf("db.Scan: %w", err)
 	}
 
 	return &s, nil
@@ -122,7 +122,7 @@ func (r *Repository) GetActiveByUserID(ctx context.Context, userID uuid.UUID) (*
 
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil // No active session is a valid case
+			return nil, nil //nolint:nilnil
 		}
 		r.handleError(ctx, err, "failed to query active session")
 		return nil, fmt.Errorf("db.QueryRow: %w", err)

@@ -57,7 +57,10 @@ var validate = func() *validator.Validate {
 //
 //	err := render.Validate(req)
 func Validate(v any) error {
-	return validate.Struct(v)
+	if err := validate.Struct(v); err != nil {
+		return fmt.Errorf("validation failed: %w", err)
+	}
+	return nil
 }
 
 // ValidationErrors converts validator validation errors into a

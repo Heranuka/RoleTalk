@@ -8,11 +8,8 @@ import (
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"go.uber.org/zap"
 
-	"go-backend/internal/infra/prompt"
 	"go-backend/internal/logger"
 	"go-backend/internal/models/domain"
 )
@@ -24,9 +21,9 @@ type Service struct {
 	repo            Repository
 	message         MessageService
 	practiceSession PracticeSessionRepository
-	topicRepo       TopicRepository // Added to get the actual Goal
+	topicRepo       TopicRepository
 	llmClient       OllamaClient
-	prompt          *prompt.Engine
+	prompt          Engine
 	transactor      Transactor
 	log             *zap.SugaredLogger
 }
@@ -39,7 +36,7 @@ func NewService(
 	practiceSession PracticeSessionRepository,
 	topicRepo TopicRepository,
 	llmClient OllamaClient,
-	promptEngine *prompt.Engine,
+	promptEngine Engine,
 	log *zap.SugaredLogger,
 ) *Service {
 	return &Service{
@@ -55,68 +52,81 @@ func NewService(
 }
 
 // EvaluateSession analyzes the completed dialog using the session's specific goal.
+// It fetches history, renders an evaluation prompt, and updates user skill points.
 func (s *Service) EvaluateSession(ctx context.Context, userID, sessionID uuid.UUID) error {
-	ctx, span := tracer.Start(ctx, "Service.Analytic.EvaluateSession")
+	ctx, span := tracer.Start(ctx, "Service.EvaluateSession")
 	defer span.End()
 
-	log := s.logger(ctx)
-	log.Infow("starting session evaluation", "session_id", sessionID, "user_id", userID)
+	log := logger.FromContext(ctx, s.log)
 
-	// 1. Fetch Session metadata to get TopicID
+	// 1. Fetch Session & Topic context
 	session, err := s.practiceSession.GetByID(ctx, sessionID)
 	if err != nil {
-		return fmt.Errorf("failed to fetch session: %w", err)
+		return fmt.Errorf("session lookup: %w", err)
 	}
 
-	// 2. Fetch Topic metadata to get the specific Goal
 	topic, err := s.topicRepo.GetByID(ctx, session.TopicID)
 	if err != nil {
-		return fmt.Errorf("failed to fetch topic context: %w", err)
+		return fmt.Errorf("topic lookup: %w", err)
 	}
 
-	// 3. Fetch dialog history
+	// 2. Fetch dialog history
 	messages, err := s.message.GetSessionHistory(ctx, sessionID)
 	if err != nil {
-		return fmt.Errorf("failed to fetch conversation history: %w", err)
+		return fmt.Errorf("history lookup: %w", err)
 	}
 
-	// 4. Build transcript for the LLM
+	if len(messages) < 2 {
+		log.Warnw("session too short for evaluation", "session_id", sessionID)
+		return nil // Nothing to evaluate
+	}
+
+	// 3. Build transcript safely (handling pointer strings)
 	var transcript strings.Builder
 	for _, m := range messages {
-		transcript.WriteString(fmt.Sprintf("%s: %s\n", m.SenderRole, m.TextContent))
+		content := "[Audio Only]"
+		if m.TextContent != nil {
+			content = *m.TextContent
+		}
+		fmt.Fprintf(&transcript, "%s: %s\n", m.SenderRole, content)
 	}
 
-	// 5. Render prompt using the actual Topic Goal and Transcript
+	// 4. Request AI Scores
 	evalParams := domain.EvaluationParams{
-		Goal:       topic.Goal, // CRITICAL: Using the real business goal
+		Goal:       topic.Goal,
 		Transcript: transcript.String(),
 	}
 
 	evalPrompt, err := s.prompt.RenderEvaluation(evalParams)
 	if err != nil {
-		return fmt.Errorf("failed to render evaluation prompt: %w", err)
+		return fmt.Errorf("prompt render: %w", err)
 	}
 
-	span.SetAttributes(
-		attribute.String("session.goal", topic.Goal),
-		attribute.Int("dialogue.turns", len(messages)),
-	)
-
-	// 6. Request and Parse AI Scores
 	scores, err := s.requestAIScores(ctx, evalPrompt)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "ai_evaluation_failed")
-		return fmt.Errorf("ai scoring logic failed: %w", err)
+		return fmt.Errorf("ai scoring: %w", err)
 	}
 
-	log.Infow("AI evaluation received",
-		"empathy", scores.Empathy,
-		"persuasion", scores.Persuasion,
-	)
-
-	// 7. Persist the progress using the existing ProcessSessionProgress logic
+	// 5. Atomic Progress Update
 	return s.ProcessSessionProgress(ctx, userID, scores.Empathy, scores.Persuasion, scores.Structure, scores.Stress)
+}
+
+// ProcessSessionProgress applies skill increments to the user's profile within a transaction.
+func (s *Service) ProcessSessionProgress(ctx context.Context, userID uuid.UUID, emp, pers, struc, stress int) error {
+	if err := s.transactor.WithinTx(ctx, func(txCtx context.Context) error {
+		skills, err := s.repo.GetByUserID(txCtx, userID)
+		if err != nil {
+			// If no skills exist yet, initialize them
+			skills = domain.NewUserSkill(userID)
+		}
+
+		skills.ApplyProgress(emp, pers, struc, stress)
+
+		return s.repo.UpdateSkills(txCtx, skills)
+	}); err != nil {
+		return fmt.Errorf("skill update transaction: %w", err)
+	}
+	return nil
 }
 
 // GetUserSkills retrieves the current skill profile for a specific user.
@@ -125,67 +135,28 @@ func (s *Service) GetUserSkills(ctx context.Context, userID uuid.UUID) (*domain.
 	ctx, span := tracer.Start(ctx, "Service.Analytic.GetUserSkills")
 	defer span.End()
 
+	log := logger.FromContext(ctx, s.log)
+
 	skills, err := s.repo.GetByUserID(ctx, userID)
 	if err != nil {
-		s.logger(ctx).Errorw("failed to fetch user skills", "user_id", userID, "error", err)
+		log.Errorw("failed to fetch user skills", "user_id", userID, "error", err)
 		return nil, fmt.Errorf("fetch skills from repo: %w", err)
 	}
 
 	return skills, nil
 }
 
-// ProcessSessionProgress applies skill increments to the user's total profile in a transaction.
-func (s *Service) ProcessSessionProgress(
-	ctx context.Context,
-	userID uuid.UUID,
-	empInc, persInc, strucInc, stressInc int,
-) error {
-	ctx, span := tracer.Start(ctx, "Service.Analytic.ProcessSessionProgress")
-	defer span.End()
-
-	return s.transactor.WithinTx(ctx, func(txCtx context.Context) error {
-		skills, err := s.repo.GetByUserID(txCtx, userID)
-		if err != nil {
-			return err
-		}
-
-		// Apply increments and clamp values 0-100 in the domain layer
-		skills.ApplyProgress(empInc, persInc, strucInc, stressInc)
-
-		if err := s.repo.UpdateSkills(txCtx, skills); err != nil {
-			return err
-		}
-
-		return nil
-	})
-}
-
-// requestAIScores performs the actual call to the LLM infrastructure.
 func (s *Service) requestAIScores(ctx context.Context, promptStr string) (*sessionScores, error) {
-	// We assume you have an 'llmClient' field in your Service struct
-	// that points to the ollama.Client or an interface.
-
-	rawScores, err := s.llmClient.AnalyzeTranscript(ctx, promptStr)
+	raw, err := s.llmClient.AnalyzeTranscript(ctx, promptStr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ollama analysis failed: %w", err)
 	}
 
-	// Map raw scores to our internal struct
+	// Ensure keys match exactly what Python/Ollama returns in its JSON
 	return &sessionScores{
-		Empathy:    rawScores["empathy"],
-		Persuasion: rawScores["persuasion"],
-		Structure:  rawScores["structure"],
-		Stress:     rawScores["stress"],
+		Empathy:    raw["empathy"],
+		Persuasion: raw["persuasion"],
+		Structure:  raw["structure"],
+		Stress:     raw["stress_resistance"], // Updated to match domain naming
 	}, nil
-}
-
-type sessionScores struct {
-	Empathy    int `json:"empathy"`
-	Persuasion int `json:"persuasion"`
-	Structure  int `json:"structure"`
-	Stress     int `json:"stress"`
-}
-
-func (s *Service) logger(ctx context.Context) *zap.SugaredLogger {
-	return logger.FromContext(ctx, s.log)
 }

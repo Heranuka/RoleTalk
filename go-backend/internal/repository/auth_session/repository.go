@@ -1,4 +1,4 @@
-// Package session implements the database repository for managing user sessions,
+// Package auth_session implements the database repository for managing user sessions,
 // encompassing both authentication tokens and active practice states.
 package auth_session
 

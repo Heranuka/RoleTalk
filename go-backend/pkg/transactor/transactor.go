@@ -8,6 +8,7 @@ package transactor
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/jackc/pgx/v5"
 	"go.uber.org/zap"
@@ -48,7 +49,7 @@ func NewTransactor(pool Pool, lg *zap.SugaredLogger) *Transactor {
 func (t *Transactor) WithinTx(ctx context.Context, fn func(ctx context.Context) error) error {
 	tx, err := t.pool.Begin(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("begin transaction: %w", err)
 	}
 
 	// Inject transaction into context so nested calls can use it.
@@ -69,10 +70,13 @@ func (t *Transactor) WithinTx(ctx context.Context, fn func(ctx context.Context) 
 	}()
 
 	if err := fn(ctx); err != nil {
-		return err
+		return fmt.Errorf("execute transaction: %w", err)
 	}
 
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+	return nil
 }
 
 // contextWithTx injects the active transaction into the context.

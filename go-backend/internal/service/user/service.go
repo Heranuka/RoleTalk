@@ -105,7 +105,7 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) error {
 
 	log := logger.FromContext(ctx, s.log)
 
-	return s.transactor.WithinTx(ctx, func(txCtx context.Context) error {
+	err := s.transactor.WithinTx(ctx, func(txCtx context.Context) error {
 		u, err := s.userRepo.GetByID(txCtx, input.ID)
 		if err != nil {
 			if errors.Is(err, repouser.ErrUserNotFound) {
@@ -134,6 +134,11 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) error {
 		log.Infow("user profile updated", "user_id", u.ID)
 		return nil
 	})
+	if err != nil {
+		span.RecordError(err)
+		return fmt.Errorf("fetch user for update: %w", err)
+	}
+	return nil
 }
 
 // SetNewPassword securely updates a user's password.
@@ -143,7 +148,7 @@ func (s *Service) SetNewPassword(ctx context.Context, id uuid.UUID, newPassword 
 
 	log := logger.FromContext(ctx, s.log)
 
-	return s.transactor.WithinTx(ctx, func(txCtx context.Context) error {
+	err := s.transactor.WithinTx(ctx, func(txCtx context.Context) error {
 		u, err := s.userRepo.GetByID(txCtx, id)
 		if err != nil {
 			if errors.Is(err, repouser.ErrUserNotFound) {
@@ -166,6 +171,10 @@ func (s *Service) SetNewPassword(ctx context.Context, id uuid.UUID, newPassword 
 		log.Infow("user password changed", "user_id", id)
 		return nil
 	})
+	if err != nil {
+		return fmt.Errorf("set new password: %w", err)
+	}
+	return nil
 }
 
 // MarkEmailVerified updates the user's status to indicate email confirmation.
@@ -175,7 +184,7 @@ func (s *Service) MarkEmailVerified(ctx context.Context, id uuid.UUID) error {
 
 	log := logger.FromContext(ctx, s.log)
 
-	return s.transactor.WithinTx(ctx, func(txCtx context.Context) error {
+	err := s.transactor.WithinTx(ctx, func(txCtx context.Context) error {
 		u, err := s.userRepo.GetByID(txCtx, id)
 		if err != nil {
 			if errors.Is(err, repouser.ErrUserNotFound) {
@@ -193,6 +202,13 @@ func (s *Service) MarkEmailVerified(ctx context.Context, id uuid.UUID) error {
 		log.Infow("user email verified", "user_id", id)
 		return nil
 	})
+
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to mark email verified")
+		return fmt.Errorf("mark email verified: %w", err)
+	}
+	return nil
 }
 
 // GetByID retrieves a user by their unique UUID.
@@ -347,7 +363,7 @@ func (s *Service) processDomainUser(ctx context.Context, input CreateWithPasswor
 	)
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create user: %w", err)
 	}
 
 	return u, nil

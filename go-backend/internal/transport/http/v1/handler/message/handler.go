@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -70,7 +69,8 @@ func (h *Handler) ProcessVoiceTurn(w http.ResponseWriter, r *http.Request) {
 		attribute.String("practice.language", practiceLang),
 	)
 
-	// 2. Parse audio file from multipart form
+	// 2. Parse audio file from multipart form safely
+	r.Body = http.MaxBytesReader(w, r.Body, 11<<20)        // 11MB to allow some overhead for 10MB file
 	if err := r.ParseMultipartForm(10 << 20); err != nil { // 10MB limit
 		log.Warnw("failed to parse multipart form", "error", err)
 		_ = render.Fail(w, http.StatusBadRequest, errors.New("invalid multipart form"))
@@ -82,7 +82,7 @@ func (h *Handler) ProcessVoiceTurn(w http.ResponseWriter, r *http.Request) {
 		_ = render.Fail(w, http.StatusBadRequest, ErrAudioFileMissing)
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	// 3. Execute AI orchestration service
 	userText, aiText, aiAudioURL, err := h.service.ProcessVoiceTurn(ctx, userID, sessionID, practiceLang, file)
@@ -100,7 +100,6 @@ func (h *Handler) ProcessVoiceTurn(w http.ResponseWriter, r *http.Request) {
 			SenderRole:  "ai",
 			TextContent: &aiText,
 			AudioURL:    &aiAudioURL,
-			CreatedAt:   time.Now(),
 		},
 	}
 

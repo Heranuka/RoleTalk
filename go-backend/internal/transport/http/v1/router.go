@@ -1,17 +1,17 @@
-// Package http manages the routing and server configuration for the RoleTalk API.
-package http
+// Package v1 manages the routing and server configuration for the RoleTalk API.
+package v1
 
 import (
+	handleranalytic "go-backend/internal/transport/http/v1/handler/analytic"
+	handlerauth "go-backend/internal/transport/http/v1/handler/auth"
+	handlermessage "go-backend/internal/transport/http/v1/handler/message"
+	handlerpractice "go-backend/internal/transport/http/v1/handler/practice_session"
+	handlertopic "go-backend/internal/transport/http/v1/handler/topic"
+	handleruser "go-backend/internal/transport/http/v1/handler/user"
 	"net/http"
 	"time"
 
 	"go-backend/internal/config"
-	handleranalytic "go-backend/internal/transport/http/handler/analytic"
-	handlerauth "go-backend/internal/transport/http/handler/auth"
-	handlermessage "go-backend/internal/transport/http/handler/message"
-	handlerpractice "go-backend/internal/transport/http/handler/practice_session"
-	handlertopic "go-backend/internal/transport/http/handler/topic"
-	handleruser "go-backend/internal/transport/http/handler/user"
 	mw "go-backend/internal/transport/http/middleware"
 
 	"github.com/go-chi/chi/v5"

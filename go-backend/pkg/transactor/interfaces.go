@@ -16,12 +16,14 @@ type DBTx interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
+// Tx represents a database transaction.
 type Tx interface {
 	DBTx
 	Commit(ctx context.Context) error
 	Rollback(ctx context.Context) error
 }
 
+// Pool represents a database connection pool that can start transactions.
 type Pool interface {
 	Begin(ctx context.Context) (Tx, error)
 }

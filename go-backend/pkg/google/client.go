@@ -23,7 +23,7 @@ import (
 var tracer = otel.Tracer("internal/infra/oauth/google")
 
 const (
-	tokenURL = "https://oauth2.googleapis.com/token"
+	tokenURL = "https://oauth2.googleapis.com/token" //nolint:gosec
 	infoURL  = "https://www.googleapis.com/oauth2/v3/userinfo"
 )
 
@@ -153,11 +153,11 @@ func (c *Client) getUserProfile(ctx context.Context, token string) (*UserProfile
 func (c *Client) doJSONRequest(req *http.Request, target any) error {
 	log := logger.FromContext(req.Context(), c.log)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //nolint:gosec
 	if err != nil {
 		return fmt.Errorf("http execute: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

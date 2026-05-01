@@ -1,8 +1,0 @@
-# Prometheus configuration file
-global:
-  scrape_interval: 15s
-
-scrape_configs:
-  - job_name: 'backend'
-    static_configs:
-      - targets: ['go-api:8080'] # Address of your Go service

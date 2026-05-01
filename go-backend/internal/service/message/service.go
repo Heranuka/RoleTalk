@@ -34,7 +34,7 @@ func NewService(repo Repository, storage StorageProvider, log *zap.SugaredLogger
 }
 
 // SaveMessage persists a dialog turn (either from user or AI).
-func (s *Service) SaveMessage(ctx context.Context, sessionID uuid.UUID, role, content, audioURL string) error {
+func (s *Service) SaveMessage(ctx context.Context, sessionID uuid.UUID, role domain.MessageRole, content string, audioURL string) error {
 	ctx, span := tracer.Start(ctx, "Service.Message.SaveMessage")
 	defer span.End()
 
@@ -44,6 +44,10 @@ func (s *Service) SaveMessage(ctx context.Context, sessionID uuid.UUID, role, co
 		SenderRole:  role,
 		TextContent: &content,
 		AudioURL:    &audioURL,
+	}
+
+	if !msg.IsValid() {
+		return fmt.Errorf("message has no content: text and audio are empty")
 	}
 
 	if err := s.repo.Create(ctx, msg); err != nil {

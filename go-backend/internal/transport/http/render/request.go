@@ -13,6 +13,7 @@ package render
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 )
 
@@ -52,12 +53,16 @@ func Decode(r *http.Request, dst any) error {
 	dec.DisallowUnknownFields()
 
 	if err := dec.Decode(dst); err != nil {
-		return err
+		return fmt.Errorf("decode body: %w", err)
 	}
 
 	if dec.More() {
 		return ErrMultipleJSON
 	}
 
-	return Validate(dst)
+	if err := Validate(dst); err != nil {
+		return fmt.Errorf("validation failed: %w", err)
+	}
+
+	return nil
 }

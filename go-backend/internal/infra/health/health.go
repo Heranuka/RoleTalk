@@ -17,13 +17,16 @@ import (
 
 // NewHandler initializes system health checks and returns an http.Handler.
 func NewHandler(
-	ctx context.Context,
+	_ context.Context,
 	cfg *config.Config,
 	log *zap.SugaredLogger,
 	pool *pgxpool.Pool,
 	storage *minio.Storage,
 ) (http.Handler, error) {
-	h, err := health.New()
+	h, err := health.New(health.WithComponent(health.Component{
+		Name:    cfg.App.Name,
+		Version: cfg.App.Version,
+	}))
 	if err != nil {
 		return nil, fmt.Errorf("health.New: %w", err)
 	}
@@ -55,11 +58,15 @@ func NewHandler(
 		Name: "ai_service",
 		Check: func(ctx context.Context) error {
 			client := http.Client{Timeout: 2 * time.Second}
-			resp, err := client.Get(cfg.API.URL + "/health")
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, cfg.API.URL+"/health", nil)
+			if err != nil {
+				return fmt.Errorf("failed to create request: %w", err)
+			}
+			resp, err := client.Do(req)
 			if err != nil {
 				return fmt.Errorf("ai service unreachable: %w", err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			if resp.StatusCode != http.StatusOK {
 				return fmt.Errorf("ai service status: %d", resp.StatusCode)
 			}
@@ -68,6 +75,27 @@ func NewHandler(
 		Timeout: 5 * time.Second,
 	}); err != nil {
 		log.Errorw("failed to register ai_service health check", "error", err)
+	}
+
+	// 4. Ollama Check (LLM Provider)
+	if err := h.Register(health.Config{
+		Name: "ollama_llm",
+		Check: func(ctx context.Context) error {
+			client := http.Client{Timeout: 2 * time.Second}
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, cfg.Ollama.URL, nil)
+			if err != nil {
+				return fmt.Errorf("failed to create request: %w", err)
+			}
+			resp, err := client.Do(req)
+			if err != nil {
+				return fmt.Errorf("ollama unreachable: %w", err)
+			}
+			defer func() { _ = resp.Body.Close() }()
+			return nil
+		},
+		Timeout: 5 * time.Second,
+	}); err != nil {
+		log.Errorw("failed to register ollama health check", "error", err)
 	}
 
 	return h.Handler(), nil

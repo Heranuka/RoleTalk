@@ -64,9 +64,9 @@ func (m *Mailer) SendHTML(ctx context.Context, to, subject, htmlBody string) err
 
 	// 3. Construct standard MIME headers for HTML email using canonical mailbox addresses.
 	var msgBuilder strings.Builder
-	msgBuilder.WriteString(fmt.Sprintf("From: %s\r\n", parsedFrom.Address))
-	msgBuilder.WriteString(fmt.Sprintf("To: %s\r\n", parsedTo.Address))
-	msgBuilder.WriteString(fmt.Sprintf("Subject: %s\r\n", mime.QEncoding.Encode("utf-8", subject)))
+	fmt.Fprintf(&msgBuilder, "From: %s\r\n", parsedFrom.Address)
+	fmt.Fprintf(&msgBuilder, "To: %s\r\n", parsedTo.Address)
+	fmt.Fprintf(&msgBuilder, "Subject: %s\r\n", mime.QEncoding.Encode("utf-8", subject))
 	msgBuilder.WriteString("MIME-Version: 1.0\r\n")
 	msgBuilder.WriteString("Content-Type: text/html; charset=\"UTF-8\"\r\n")
 

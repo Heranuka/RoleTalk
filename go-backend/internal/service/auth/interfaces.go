@@ -32,8 +32,8 @@ type UserService interface {
 	SetNewPassword(ctx context.Context, id uuid.UUID, newPassword string) error
 }
 
-// AuthSessionRepository defines persistence operations for user sessions (refresh tokens).
-type AuthSessionRepository interface {
+// SessionRepository defines persistence operations for user sessions (refresh tokens).
+type SessionRepository interface {
 	// Create stores a new session record containing the refresh token hash.
 	Create(ctx context.Context, s *domain.AuthSession) error
 

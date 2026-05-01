@@ -34,6 +34,7 @@ type Transactor interface {
 	WithinTx(ctx context.Context, fn func(ctx context.Context) error) error
 }
 
+// Minio defines the object storage interface.
 type Minio interface {
 	Upload(ctx context.Context, subdir, filename string, src io.Reader) (string, error)
 }

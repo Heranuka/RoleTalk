@@ -27,7 +27,7 @@ type voiceTurnResponse struct {
 func toMessageResponse(m *domain.Message) messageResponse {
 	return messageResponse{
 		ID:          m.ID,
-		SenderRole:  m.SenderRole,
+		SenderRole:  string(m.SenderRole),
 		TextContent: m.TextContent,
 		AudioURL:    m.AudioURL, // Now correctly using AudioURL for voice
 		CreatedAt:   m.CreatedAt,

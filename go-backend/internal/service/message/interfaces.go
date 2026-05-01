@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 )
 
+// Repository defines the data access layer for this service.
 type Repository interface {
 	Create(ctx context.Context, m *domain.Message) error
 	GetBySessionID(ctx context.Context, sessionID uuid.UUID) ([]*domain.Message, error)

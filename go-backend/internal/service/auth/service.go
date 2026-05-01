@@ -27,21 +27,21 @@ var tracer = otel.Tracer("internal/service/auth")
 
 // Service provides authentication and identity operations.
 type Service struct {
-	userService     UserService
-	authSessionRepo AuthSessionRepository
-	oauthRepo       OAuthConnectionRepository
-	tokenRepo       VerificationTokenRepository
-	emailSender     EmailSender
-	oauthClient     OAuthClient
-	transactor      Transactor
-	authConfig      *config.Auth
-	log             *zap.SugaredLogger
+	userService UserService
+	sessionRepo SessionRepository
+	oauthRepo   OAuthConnectionRepository
+	tokenRepo   VerificationTokenRepository
+	emailSender EmailSender
+	oauthClient OAuthClient
+	transactor  Transactor
+	authConfig  *config.Auth
+	log         *zap.SugaredLogger
 }
 
 // NewService creates a new authentication service instance.
 func NewService(
 	userService UserService,
-	authSessionRepo AuthSessionRepository,
+	sessionRepo SessionRepository,
 	oauthRepo OAuthConnectionRepository,
 	tokenRepo VerificationTokenRepository,
 	emailSender EmailSender,
@@ -51,15 +51,15 @@ func NewService(
 	log *zap.SugaredLogger,
 ) *Service {
 	return &Service{
-		userService:     userService,
-		authSessionRepo: authSessionRepo,
-		oauthRepo:       oauthRepo,
-		tokenRepo:       tokenRepo,
-		emailSender:     emailSender,
-		oauthClient:     oauthClient,
-		transactor:      transactor,
-		authConfig:      authConfig,
-		log:             log,
+		userService: userService,
+		sessionRepo: sessionRepo,
+		oauthRepo:   oauthRepo,
+		tokenRepo:   tokenRepo,
+		emailSender: emailSender,
+		oauthClient: oauthClient,
+		transactor:  transactor,
+		authConfig:  authConfig,
+		log:         log,
 	}
 }
 
@@ -80,7 +80,7 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) error {
 			DisplayName: input.Email, // Default DisplayName to Email for initial registration
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("failed to create user: %w", err)
 		}
 
 		// 2. Generate verification token
@@ -100,7 +100,7 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) error {
 
 	if err != nil {
 		span.RecordError(err)
-		return err
+		return fmt.Errorf("create token: %w", err)
 	}
 
 	// 4. Send email (outside the DB transaction)
@@ -142,7 +142,7 @@ func (s *Service) VerifyEmail(ctx context.Context, rawToken string) error {
 
 	if err != nil {
 		span.RecordError(err)
-		return err
+		return fmt.Errorf("delete token: %w", err)
 	}
 
 	log.Info("email verified successfully")
@@ -199,7 +199,7 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 
 		tokenStr, entity, err := domain.NewVerificationToken(u.ID, domain.TokenPurposePasswordReset, s.authConfig.PasswordResetTTL)
 		if err != nil {
-			return err
+			return fmt.Errorf("generate token: %w", err)
 		}
 
 		rawToken = tokenStr
@@ -208,7 +208,7 @@ func (s *Service) RequestPasswordReset(ctx context.Context, email string) error 
 
 	if err != nil {
 		span.RecordError(err)
-		return err
+		return fmt.Errorf("create token: %w", err)
 	}
 
 	if err := s.emailSender.SendPasswordResetEmail(ctx, u.Email, rawToken); err != nil {
@@ -233,11 +233,11 @@ func (s *Service) ResetPassword(ctx context.Context, rawToken, newPassword strin
 			if errors.Is(err, tokenrepo.ErrTokenNotFound) {
 				return ErrInvalidVerificationToken
 			}
-			return err
+			return fmt.Errorf("fetch token: %w", err)
 		}
 
 		if err := s.userService.SetNewPassword(txCtx, token.UserID, newPassword); err != nil {
-			return err
+			return fmt.Errorf("set new password: %w", err)
 		}
 
 		return s.tokenRepo.Delete(txCtx, tokenHash)
@@ -245,7 +245,7 @@ func (s *Service) ResetPassword(ctx context.Context, rawToken, newPassword strin
 
 	if err != nil {
 		span.RecordError(err)
-		return err
+		return fmt.Errorf("delete token: %w", err)
 	}
 
 	log.Info("password reset successfully")
@@ -269,13 +269,13 @@ func (s *Service) LoginWithGoogle(ctx context.Context, code string) (string, str
 		conn, err := s.oauthRepo.GetByProviderUserID(txCtx, domain.OAuthProviderGoogle, profile.ProviderID)
 		if err == nil {
 			targetUser, err = s.userService.GetByID(txCtx, conn.UserID)
-			return err
+			return fmt.Errorf("failed to get oathauth: %w", err)
 		}
 
 		targetUser, err = s.userService.GetByEmail(txCtx, profile.Email)
 		if err != nil {
 			if !errors.Is(err, user.ErrUserNotFound) {
-				return err
+				return fmt.Errorf("fetch user: %w", err)
 			}
 
 			userID, createErr := s.userService.CreateOAuthUser(txCtx, user.CreateOAuthInput{
@@ -285,11 +285,11 @@ func (s *Service) LoginWithGoogle(ctx context.Context, code string) (string, str
 				IsEmailVerified: true,
 			})
 			if createErr != nil {
-				return createErr
+				return fmt.Errorf("create oauth user: %w", createErr)
 			}
 			targetUser, err = s.userService.GetByID(txCtx, userID)
 			if err != nil {
-				return err
+				return fmt.Errorf("fetch user: %w", err)
 			}
 		}
 
@@ -299,7 +299,7 @@ func (s *Service) LoginWithGoogle(ctx context.Context, code string) (string, str
 
 	if err != nil {
 		span.RecordError(err)
-		return "", "", err
+		return "", "", fmt.Errorf("oauth transaction failed: %w", err)
 	}
 
 	log.Infow("oauth login success", "user_id", targetUser.ID, "provider", "google")
@@ -316,7 +316,7 @@ func (s *Service) Refresh(ctx context.Context, oldRawToken string) (string, stri
 
 	err := s.transactor.WithinTx(ctx, func(txCtx context.Context) error {
 		tokenHash := hashToken(oldRawToken)
-		session, err := s.authSessionRepo.GetByTokenHash(txCtx, tokenHash)
+		session, err := s.sessionRepo.GetByTokenHash(txCtx, tokenHash)
 		if err != nil {
 			return ErrRefreshTokenInvalid
 		}
@@ -327,22 +327,22 @@ func (s *Service) Refresh(ctx context.Context, oldRawToken string) (string, stri
 
 		u, err := s.userService.GetByID(txCtx, session.UserID)
 		if err != nil {
-			return err
+			return fmt.Errorf("fetch user: %w", err)
 		}
 
 		at, err = s.generateAccessToken(u)
 		if err != nil {
-			return err
+			return fmt.Errorf("generate access token: %w", err)
 		}
 
-		_ = s.authSessionRepo.Revoke(txCtx, tokenHash)
+		_ = s.sessionRepo.Revoke(txCtx, tokenHash)
 		rt, err = s.generateRefreshToken(txCtx, u.ID)
-		return err
+		return fmt.Errorf("failed to get refresh token: %w", err)
 	})
 
 	if err != nil {
 		span.RecordError(err)
-		return "", "", err
+		return "", "", fmt.Errorf("refresh transaction failed: %w", err)
 	}
 
 	log.Infow("token rotated", "token_hash_preview", oldRawToken[:5])
@@ -354,7 +354,7 @@ func (s *Service) ResendVerificationEmail(ctx context.Context, email string) err
 	u, err := s.userService.GetByEmail(ctx, email)
 	if err != nil {
 		// Security: If user is not found, silently return nil to prevent email enumeration.
-		return nil
+		return nil //nolint:nilerr
 	}
 
 	if u.IsEmailVerified {
@@ -388,7 +388,7 @@ func (s *Service) ResendVerificationEmail(ctx context.Context, email string) err
 	})
 
 	if err != nil {
-		return err
+		return fmt.Errorf("create token: %w", err)
 	}
 
 	// 4. Send the new email
@@ -424,21 +424,25 @@ func (s *Service) generateAccessToken(u *domain.User) (string, error) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(s.authConfig.Secret))
+	signed, err := token.SignedString([]byte(s.authConfig.Secret))
+	if err != nil {
+		return "", fmt.Errorf("sign jwt: %w", err)
+	}
+	return signed, nil
 }
 
 func (s *Service) generateRefreshToken(ctx context.Context, userID uuid.UUID) (string, error) {
 	tokenBytes := make([]byte, 32)
 	if _, err := rand.Read(tokenBytes); err != nil {
-		return "", err
+		return "", fmt.Errorf("read random bytes: %w", err)
 	}
 
 	rawToken := base64.RawURLEncoding.EncodeToString(tokenBytes)
 	expiresAt := time.Now().Add(s.authConfig.RefreshTokenTTL)
 
 	session := domain.NewAuthSession(userID, hashToken(rawToken), expiresAt)
-	if err := s.authSessionRepo.Create(ctx, session); err != nil {
-		return "", err
+	if err := s.sessionRepo.Create(ctx, session); err != nil {
+		return "", fmt.Errorf("create auth session: %w", err)
 	}
 
 	return rawToken, nil

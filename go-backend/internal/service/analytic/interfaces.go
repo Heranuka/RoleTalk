@@ -15,10 +15,12 @@ type Repository interface {
 	UpdateSkills(ctx context.Context, s *domain.UserSkill) error
 }
 
+// PracticeSessionRepository defines data access for roleplay sessions.
 type PracticeSessionRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.PracticeSession, error)
 }
 
+// TopicRepository defines data access for roleplay scenarios.
 type TopicRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Topic, error)
 }
@@ -28,6 +30,12 @@ type MessageService interface {
 	GetSessionHistory(ctx context.Context, sessionID uuid.UUID) ([]*domain.Message, error)
 }
 
+// Engine defines the prompt rendering logic.
+type Engine interface {
+	RenderEvaluation(params domain.EvaluationParams) (string, error)
+}
+
+// OllamaClient defines the LLM analysis interface.
 type OllamaClient interface {
 	AnalyzeTranscript(ctx context.Context, prompt string) (map[string]int, error)
 }

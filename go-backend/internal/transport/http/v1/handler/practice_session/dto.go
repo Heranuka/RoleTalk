@@ -1,3 +1,4 @@
+// Package practice_session provides data transfer objects for practice session handlers.
 package practice_session
 
 import (

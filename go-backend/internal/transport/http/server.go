@@ -1,4 +1,4 @@
-// Package http provides the HTTP transport layer for the Backforge API.
+// Package http provides the HTTP transport layer for the RoleTalk API.
 // It contains the router, middleware, handlers, and HTTP server lifecycle
 // management responsible for serving the API over HTTP.
 package http
@@ -55,7 +55,8 @@ func (s *Server) Run(ctx context.Context) error {
 		MaxHeaderBytes: 1 << 20, // 1MB
 	}
 
-	ln, err := net.Listen("tcp", addr)
+	lc := net.ListenConfig{}
+	ln, err := lc.Listen(ctx, "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
@@ -84,7 +85,7 @@ func (s *Server) Run(ctx context.Context) error {
 		s.log.Info("http server shutdown initiated")
 
 		shutdownCtx, cancel := context.WithTimeout(
-			context.Background(),
+			context.WithoutCancel(ctx),
 			s.cfg.HTTP.ShutdownTimeout,
 		)
 		defer cancel()
@@ -96,7 +97,7 @@ func (s *Server) Run(ctx context.Context) error {
 				s.log.Errorw("http server forced close failed", "error", closeErr)
 			}
 
-			return err
+			return fmt.Errorf("http server shutdown: %w", err)
 		}
 
 		s.log.Info("http server stopped gracefully")
@@ -121,7 +122,12 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 	s.log.Info("http server shutting down")
 
-	return s.srv.Shutdown(ctx)
+	err := s.srv.Shutdown(ctx)
+	if err != nil {
+		return fmt.Errorf("http server shutdown: %w", err)
+	}
+
+	return nil
 }
 
 func normalizeAddr(port string) string {

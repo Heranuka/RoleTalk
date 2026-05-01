@@ -50,7 +50,11 @@ func (s *Service) GetCommunityFeed(ctx context.Context, limit, offset int) ([]*d
 	ctx, span := tracer.Start(ctx, "Service.Topic.GetCommunityFeed")
 	defer span.End()
 
-	return s.repo.GetCommunity(ctx, limit, offset)
+	res, err := s.repo.GetCommunity(ctx, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch community feed: %w", err)
+	}
+	return res, nil
 }
 
 // CreateTopic publishes a new scenario created by a user.
@@ -63,7 +67,6 @@ func (s *Service) CreateTopic(ctx context.Context, userID uuid.UUID, title, desc
 	}
 
 	topic := &domain.Topic{
-		ID:              uuid.New(),
 		AuthorID:        &userID,
 		Title:           title,
 		Description:     &desc,
@@ -81,24 +84,44 @@ func (s *Service) CreateTopic(ctx context.Context, userID uuid.UUID, title, desc
 	return id, nil
 }
 
-// LikeTopic handles the social interaction of liking a scenario.
+// LikeTopic records a user's appreciation for a specific topic within a database transaction.
+// It ensures that the operation is atomic and follows strict error wrapping standards.
 func (s *Service) LikeTopic(ctx context.Context, userID, topicID uuid.UUID) error {
-	ctx, span := tracer.Start(ctx, "Service.Topic.LikeTopic")
-	defer span.End()
-
-	// Use transaction to ensure both like record and counter are updated
-	return s.transactor.WithinTx(ctx, func(txCtx context.Context) error {
-		return s.repo.AddLike(txCtx, userID, topicID)
+	// Execute the operation within a transaction to maintain data integrity.
+	err := s.transactor.WithinTx(ctx, func(txCtx context.Context) error {
+		if err := s.repo.AddLike(txCtx, userID, topicID); err != nil {
+			// Wrap with lower-level context (Repository layer).
+			return fmt.Errorf("repository: %w", err)
+		}
+		return nil
 	})
+
+	if err != nil {
+		// Wrap with high-level business context (Service layer).
+		// This satisfies the wrapcheck linter and provides a clear audit trail.
+		return fmt.Errorf("topic service: failed to like topic: %w", err)
+	}
+
+	return nil
 }
 
+// RemoveLike deletes a user's appreciation for a specific topic.
 func (s *Service) RemoveLike(ctx context.Context, userID, topicID uuid.UUID) error {
 	ctx, span := tracer.Start(ctx, "Service.Topic.RemoveLike")
 	defer span.End()
 
-	return s.transactor.WithinTx(ctx, func(txCtx context.Context) error {
-		return s.repo.RemoveLike(txCtx, userID, topicID)
+	err := s.transactor.WithinTx(ctx, func(txCtx context.Context) error {
+		err := s.repo.RemoveLike(txCtx, userID, topicID)
+		if err != nil {
+			return fmt.Errorf("remove like: %w", err)
+		}
+		return nil
 	})
+
+	if err != nil {
+		return fmt.Errorf("remove like: %w", err)
+	}
+	return nil
 }
 
 // DeleteTopic verifies ownership and removes the specified scenario.
@@ -111,7 +134,7 @@ func (s *Service) DeleteTopic(ctx context.Context, userID, topicID uuid.UUID) er
 	// 1. Fetch the topic to check ownership
 	topic, err := s.repo.GetByID(ctx, topicID)
 	if err != nil {
-		return err // Already mapped to ErrTopicNotFound in repo
+		return fmt.Errorf("get topic: %w", err)
 	}
 
 	// 2. Authorization check: only the author can delete their topic.
