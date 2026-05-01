@@ -45,10 +45,10 @@ class _FeedbackScreenState extends State<FeedbackScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
+                const Row(
                   children: [
                     Icon(Icons.analytics_rounded, color: AppTheme.primary),
-                    const SizedBox(width: 8),
+                    SizedBox(width: 8),
                     Text(
                       'Оценки отыгрыша',
                       style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: AppTheme.primary),

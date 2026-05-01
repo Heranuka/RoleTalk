@@ -30,10 +30,12 @@ class _FriendsScreenState extends State<FriendsScreen> {
 
   Future<void> _reload() async {
     final l = await FriendsStore.instance.load();
-    if (mounted) setState(() {
+    if (mounted) {
+      setState(() {
       _list = l;
       _loading = false;
     });
+    }
   }
 
   Future<void> _add() async {
@@ -84,7 +86,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
               ],
             ),
           ),
-          Text(
+          const Text(
             'Инвайт — шаринг демо-ссылки (deep link в приложении не подключён).',
             style: TextStyle(fontSize: 12, color: AppTheme.textSecondary),
             textAlign: TextAlign.center,
@@ -94,7 +96,7 @@ class _FriendsScreenState extends State<FriendsScreen> {
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
                 : _list.isEmpty
-                    ? Center(
+                    ? const Center(
                         child: Text('Пока пусто', style: TextStyle(color: AppTheme.textSecondary)),
                       )
                     : ListView.builder(

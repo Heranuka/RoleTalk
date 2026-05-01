@@ -8,18 +8,18 @@ class MockRepository {
   MockRepository._();
 
   static final List<MockUser> users = [
-    MockUser(id: 'u1', name: 'Анна К.', initials: 'АК', accentColor: 0xFFE8B4BC),
-    MockUser(id: 'u2', name: 'Маркус Л.', initials: 'МЛ', accentColor: 0xFFB8C5F0),
-    MockUser(id: 'u3', name: 'Елена В.', initials: 'ЕВ', accentColor: 0xFFC5E8D5),
-    MockUser(id: 'u4', name: 'James O.', initials: 'JO', accentColor: 0xFFFFD8A8),
-    MockUser(id: 'u5', name: 'София Р.', initials: 'СР', accentColor: 0xFFD4C4F0),
-    MockUser(id: 'u6', name: 'Oliver T.', initials: 'OT', accentColor: 0xFFB3E5FC),
-    MockUser(id: 'u7', name: 'Илья Н.', initials: 'ИН', accentColor: 0xFFFFCCBC),
-    MockUser(id: 'u8', name: 'Mia Chen', initials: 'MC', accentColor: 0xFFC8E6C9),
+    const MockUser(id: 'u1', name: 'Анна К.', initials: 'АК', accentColor: 0xFFE8B4BC),
+    const MockUser(id: 'u2', name: 'Маркус Л.', initials: 'МЛ', accentColor: 0xFFB8C5F0),
+    const MockUser(id: 'u3', name: 'Елена В.', initials: 'ЕВ', accentColor: 0xFFC5E8D5),
+    const MockUser(id: 'u4', name: 'James O.', initials: 'JO', accentColor: 0xFFFFD8A8),
+    const MockUser(id: 'u5', name: 'София Р.', initials: 'СР', accentColor: 0xFFD4C4F0),
+    const MockUser(id: 'u6', name: 'Oliver T.', initials: 'OT', accentColor: 0xFFB3E5FC),
+    const MockUser(id: 'u7', name: 'Илья Н.', initials: 'ИН', accentColor: 0xFFFFCCBC),
+    const MockUser(id: 'u8', name: 'Mia Chen', initials: 'MC', accentColor: 0xFFC8E6C9),
   ];
 
   static final List<TopicVote> topics = [
-    TopicVote(
+    const TopicVote(
       id: 'raise',
       title: 'Переговоры о повышении',
       emoji: '💼',
@@ -35,7 +35,7 @@ class MockRepository {
       aiRoleName: 'Сергей (Босс)',
       aiEmoji: '🧑‍💼',
     ),
-    TopicVote(
+    const TopicVote(
       id: 'broken_car',
       title: 'Покупка б/у авто',
       emoji: '🚗',
@@ -51,7 +51,7 @@ class MockRepository {
       aiRoleName: 'Максим (Продавец)',
       aiEmoji: '🧔',
     ),
-    TopicVote(
+    const TopicVote(
       id: 'taxi',
       title: 'Таксист и пассажир',
       emoji: '🚕',
@@ -67,7 +67,7 @@ class MockRepository {
       aiRoleName: 'Таксист',
       aiEmoji: '🧑‍✈️',
     ),
-    TopicVote(
+    const TopicVote(
       id: 'breakup',
       title: 'Расставание',
       emoji: '💔',

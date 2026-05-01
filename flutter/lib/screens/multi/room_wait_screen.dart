@@ -108,7 +108,7 @@ class _RoomWaitScreenState extends State<RoomWaitScreen> with SingleTickerProvid
     if (_navigated || !mounted) return;
     _navigated = true;
 
-    if (await SettingsStore.instance.vibrateOnReady) {
+    if (SettingsStore.instance.vibrateOnReady) {
       await HapticFeedback.heavyImpact();
     }
     if (mounted) {
@@ -119,7 +119,7 @@ class _RoomWaitScreenState extends State<RoomWaitScreen> with SingleTickerProvid
         ),
       );
     }
-    if (await SettingsStore.instance.notifyLobbyReady) {
+    if (SettingsStore.instance.notifyLobbyReady) {
       await LocalNotificationService.showRoomReady(widget.room.title);
     }
 

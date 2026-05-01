@@ -63,7 +63,7 @@ class LocalNotificationService {
         id: 902,
         title: 'Смена под-темы',
         body: topicTitle,
-        notificationDetails: const NotificationDetails(android: android, iOS: const DarwinNotificationDetails()),
+        notificationDetails: const NotificationDetails(android: android, iOS: DarwinNotificationDetails()),
       );
     } catch (_) {}
   }

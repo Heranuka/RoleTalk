@@ -384,7 +384,7 @@ class _MsgBubble extends StatelessWidget {
                     padding: const EdgeInsets.only(left: 4, bottom: 4),
                     child: Text(
                       '${message.peerName} · ${message.peerRole ?? ""}',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppTheme.textSecondary),
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppTheme.textSecondary),
                     ),
                   ),
                 Container(
@@ -522,7 +522,7 @@ class _InputPanel extends StatelessWidget {
                           : busy
                               ? 'Подождите…'
                               : 'Удерживайте микрофон — только голос, без текста',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textSecondary),
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.textSecondary),
                     ),
                   ),
                   Listener(
@@ -540,7 +540,7 @@ class _InputPanel extends StatelessWidget {
                             color: recording ? const Color(0xFFE53935) : AppTheme.primary,
                             shape: const CircleBorder(),
                             elevation: recording ? 6 : 2,
-                            child: SizedBox(
+                            child: const SizedBox(
                               width: 50,
                               height: 50,
                               child: Icon(

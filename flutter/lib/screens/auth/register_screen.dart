@@ -53,7 +53,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       body: ListView(
         padding: const EdgeInsets.all(24),
         children: [
-          Text(
+          const Text(
             'Почта и пароль хранятся только на устройстве (демо).',
             style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, height: 1.35),
           ),

@@ -12,6 +12,7 @@ class AuthService {
   AuthService._() {
     _apiClient = ApiClient(Dio());
   }
+
   static final AuthService instance = AuthService._();
 
   late final ApiClient _apiClient;
@@ -20,7 +21,19 @@ class AuthService {
   static const _accessTokenKey = 'access_token';
   static const _refreshTokenKey = 'refresh_token';
 
+  static const _googleServerClientId =
+      'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com';
+
+  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
+  bool _googleSignInInitialized = false;
+
   AppUser? _cache;
+
+  Future<void> _initGoogleSignIn() async {
+    if (_googleSignInInitialized) return;
+    await _googleSignIn.initialize(serverClientId: _googleServerClientId);
+    _googleSignInInitialized = true;
+  }
 
   Future<bool> isLoggedIn() async {
     final p = await SharedPreferences.getInstance();
@@ -33,13 +46,18 @@ class AuthService {
       _cache = AppUser.fromJson(jsonDecode(raw) as Map<String, dynamic>);
       return true;
     } catch (_) {
+      _cache = null;
       return false;
     }
   }
 
   AppUser? get currentUser => _cache;
 
-  Future<void> _saveSession(AppUser user, String accessToken, String refreshToken) async {
+  Future<void> _saveSession(
+      AppUser user,
+      String accessToken,
+      String refreshToken,
+      ) async {
     final p = await SharedPreferences.getInstance();
     await p.setString(_sessionKey, jsonEncode(user.toJson()));
     await p.setString(_accessTokenKey, accessToken);
@@ -54,7 +72,7 @@ class AuthService {
     await p.remove(_refreshTokenKey);
     _cache = null;
     try {
-      await GoogleSignIn.instance.signOut();
+      await _googleSignIn.signOut();
     } catch (_) {}
   }
 
@@ -69,8 +87,6 @@ class AuthService {
         'password': password,
         'display_name': displayName,
       });
-      // After registration in this backend, user might need to verify email or just login
-      // For now, let's just try to login automatically if registration is successful
       await loginWithEmail(email: email, password: password);
     } on DioException catch (e) {
       final msg = e.response?.data['message'] ?? 'Ошибка регистрации';
@@ -92,10 +108,13 @@ class AuthService {
       final accessToken = data['access_token'] as String;
       final refreshToken = data['refresh_token'] as String;
 
-      // After login, we usually fetch the profile to get the display name etc.
-      final profileResponse = await _apiClient.instance.get('/users/me', options: Options(
-        headers: {'Authorization': 'Bearer $accessToken'}
-      ));
+      final profileResponse = await _apiClient.instance.get(
+        '/users/me',
+        options: Options(
+          headers: {'Authorization': 'Bearer $accessToken'},
+        ),
+      );
+
       final profileData = profileResponse.data as Map<String, dynamic>;
 
       final user = AppUser(
@@ -112,23 +131,26 @@ class AuthService {
   }
 
   Future<String?> signInWithGoogle() async {
-    // Note: Backend has /auth/google/callback which expects a 'code'
-    // This requires proper Google Sign In flow that returns an auth code.
-    // For now, we keep the demo fallback or implement if google_sign_in supports it.
     try {
-      final googleUser = await GoogleSignIn().signIn();
-      if (googleUser == null) return null;
+      await _initGoogleSignIn();
+
+      final googleUser = await _googleSignIn.authenticate();
 
       final auth = await googleUser.authentication;
-      final serverAuthCode = googleUser.serverAuthCode;
+      final idToken = auth.idToken;
 
-      if (serverAuthCode == null) {
-        throw AuthException('Could not get server auth code from Google');
+      if (idToken == null) {
+        throw AuthException('Could not get ID token from Google');
       }
 
-      final response = await _apiClient.instance.post('/auth/google/callback', data: {
-        'code': serverAuthCode,
-      });
+      if (idToken == null) {
+        throw AuthException('Could not get ID token from Google');
+      }
+
+      final response = await _apiClient.instance.post(
+        '/auth/google/callback',
+        data: {'id_token': idToken},
+      );
 
       final data = response.data as Map<String, dynamic>;
       final accessToken = data['access_token'] as String;
@@ -155,4 +177,3 @@ class AuthException implements Exception {
   @override
   String toString() => message;
 }
-

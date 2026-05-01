@@ -196,7 +196,7 @@ Widget _buildSectionHeader(String title, {bool showSeeAll = false}) {
         Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
         if (showSeeAll)
           GestureDetector(
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CommunityThemesScreen())),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CommunityThemesScreen())),
             child: Text(
               AppLocalizations.of(context, 'see_all'),
               style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold, fontSize: 13),
@@ -217,7 +217,7 @@ Widget _buildSectionHeader(String title, {bool showSeeAll = false}) {
   }) {
     final theme = Theme.of(context);
     return GestureDetector(
-      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CommunityThemesScreen())),
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CommunityThemesScreen())),
       child: Container(
         width: 150,
         padding: const EdgeInsets.all(16),

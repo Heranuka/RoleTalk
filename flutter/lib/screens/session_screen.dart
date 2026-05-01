@@ -227,7 +227,7 @@ class _SessionScreenState extends State<SessionScreen> with TickerProviderStateM
                         const SizedBox(height: 2),
                         Text(
                           '${AppLocalizations.of(context, 'session_goal')}: ${widget.topic.goal}',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.primary),
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.primary),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),

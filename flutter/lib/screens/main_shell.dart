@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
 import '../services/app_localizations.dart';
 import 'home_screen.dart';
 import 'profile_screen.dart';

@@ -28,12 +28,17 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _emailLogin() async {
     setState(() => _loading = true);
     try {
-      await AuthService.instance.loginWithEmail(email: _email.text, password: _pass.text);
+      await AuthService.instance.loginWithEmail(
+        email: _email.text.trim(),
+        password: _pass.text,
+      );
       if (!mounted) return;
       widget.onSuccess();
     } on AuthException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message)),
+        );
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -45,14 +50,27 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final warn = await AuthService.instance.signInWithGoogle();
       if (!mounted) return;
+
       if (warn != null) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(warn)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(warn)),
+        );
+        return;
       }
+
       widget.onSuccess();
     } on AuthException catch (e) {
-      if (e.message != 'Вход отменён' && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      if (!mounted) return;
+      if (e.message != 'Вход отменён') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message)),
+        );
       }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Google OAuth failed')),
+      );
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -69,13 +87,18 @@ class _LoginScreenState extends State<LoginScreen> {
             Text(
               'SPEAK / SIM',
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w900),
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                fontWeight: FontWeight.w900,
+              ),
             ),
             const SizedBox(height: 8),
-            Text(
+            const Text(
               'Вход',
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                color: AppTheme.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             const SizedBox(height: 40),
             TextField(
@@ -84,7 +107,9 @@ class _LoginScreenState extends State<LoginScreen> {
               autocorrect: false,
               decoration: const InputDecoration(
                 labelText: 'Почта',
-                border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                ),
               ),
             ),
             const SizedBox(height: 14),
@@ -93,7 +118,9 @@ class _LoginScreenState extends State<LoginScreen> {
               obscureText: true,
               decoration: const InputDecoration(
                 labelText: 'Пароль',
-                border: OutlineInputBorder(borderRadius: BorderRadius.all(Radius.circular(12))),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                ),
               ),
             ),
             const SizedBox(height: 24),
@@ -103,29 +130,37 @@ class _LoginScreenState extends State<LoginScreen> {
                 onPressed: _loading ? null : _emailLogin,
                 child: _loading
                     ? const SizedBox(
-                        height: 22,
-                        width: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
+                  height: 22,
+                  width: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
                     : const Text('Войти'),
               ),
             ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: _loading ? null : _google,
-              icon: const Text('G', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+              icon: const Text(
+                'G',
+                style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+              ),
               label: const Text('Войти с Google'),
             ),
             TextButton(
               onPressed: _loading
                   ? null
                   : () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute<void>(
-                          builder: (_) => RegisterScreen(onSuccess: widget.onSuccess),
-                        ),
-                      );
-                    },
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => RegisterScreen(
+                      onSuccess: widget.onSuccess,
+                    ),
+                  ),
+                );
+              },
               child: const Text('Регистрация'),
             ),
           ],

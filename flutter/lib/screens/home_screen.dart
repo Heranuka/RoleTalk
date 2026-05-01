@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/app_localizations.dart';
-import '../services/settings_store.dart';
 import '../models/topic_vote.dart';
 import 'prep_screen.dart';
 import 'multi/community_themes_screen.dart';
@@ -94,7 +93,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Navigator.push(
                 context, 
                 // ИСПРАВЛЕНО: Убрали const, чтобы не было ошибки билда
-                MaterialPageRoute(builder: (_) => CommunityThemesScreen())
+                MaterialPageRoute(builder: (_) => const CommunityThemesScreen())
               );
             }
           ),
