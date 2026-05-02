@@ -4,6 +4,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"go.opentelemetry.io/otel"
@@ -90,6 +91,32 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	_ = render.OK(w, tokenResponse{AccessToken: at, RefreshToken: rt})
 }
 
+// Logout handles POST /api/v1/auth/logout.
+// It accepts a refresh token and revokes it to prevent further access.
+func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	ctx, span := tracer.Start(r.Context(), "Handler.Logout")
+	defer span.End()
+
+	log := logger.FromContext(ctx, h.log)
+
+	var req logoutRequest
+	if httputil.DecodeAndValidate(r, w, h.log, &req, "logout") {
+		return
+	}
+
+	if err := h.service.Logout(ctx, req.RefreshToken); err != nil {
+		// Even if logout fails internally, we usually don't want to leak
+		// details to the client, but for tracing we record it.
+		h.handleError(ctx, w, err, "logout")
+		return
+	}
+
+	log.Info("logout request processed")
+
+	// 204 No Content is the standard response for a successful side-effect only request
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // VerifyEmail confirms the user's email address using a provided token.
 func (h *Handler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 	ctx, span := tracer.Start(r.Context(), "Handler.VerifyEmail")
@@ -106,6 +133,69 @@ func (h *Handler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = render.Msg(w, "email verified successfully")
+}
+
+// VerifyEmailWeb extracted from your previous snippet, placed in the correct handler package.
+func (h *Handler) VerifyEmailWeb(w http.ResponseWriter, r *http.Request) {
+	ctx, span := tracer.Start(r.Context(), "Handler.VerifyEmailWeb")
+	defer span.End()
+
+	token := r.URL.Query().Get("token")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	var title, message, icon, iconColor string
+
+	if token == "" {
+		title = "Invalid Link"
+		message = "The verification token is missing. Please use the link provided in your email."
+		icon = "❓"
+		iconColor = "#EF4444"
+	} else {
+		err := h.service.VerifyEmail(ctx, token)
+		if err != nil {
+			title = "Verification Failed"
+			message = "The link has expired or the token is invalid. Please request a new verification email in the app."
+			icon = "⚠️"
+			iconColor = "#F59E0B"
+		} else {
+			title = "Email Verified!"
+			message = "Your email has been successfully confirmed. You can now access all features of Role Talk."
+			icon = "✅"
+			iconColor = "#10B981"
+		}
+	}
+
+	html := fmt.Sprintf(`
+	<!DOCTYPE html>
+	<html lang="en">
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>Role Talk | Verification</title>
+		<style>
+			body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #F9FAFB; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+			.card { background: white; padding: 48px 32px; border-radius: 32px; box-shadow: 0 20px 50px rgba(0,0,0,0.04); text-align: center; max-width: 420px; width: 90%%; border: 1px solid #F3F4F6; }
+			.brand { color: #00A67E; font-weight: 900; font-size: 22px; letter-spacing: -1px; margin-bottom: 32px; }
+			.icon-circle { width: 80px; height: 80px; background-color: %s15; border-radius: 50%%; display: flex; justify-content: center; align-items: center; margin: 0 auto 24px; font-size: 40px; }
+			h1 { color: #111827; font-size: 26px; font-weight: 800; margin: 0 0 12px; letter-spacing: -0.5px; }
+			p { color: #6B7280; font-size: 16px; line-height: 1.6; margin: 0 0 32px; }
+			.btn { background-color: #00A67E; color: white; padding: 16px 40px; border-radius: 16px; text-decoration: none; font-weight: 700; font-size: 15px; transition: all 0.2s ease; display: inline-block; box-shadow: 0 4px 12px rgba(0,166,126,0.2); }
+			.btn:hover { transform: translateY(-2px); box-shadow: 0 6px 15px rgba(0,166,126,0.3); }
+		</style>
+	</head>
+	<body>
+		<div class="card">
+			<div class="brand">ROLE TALK</div>
+			<div class="icon-circle" style="background-color: %s15; color: %s;">%s</div>
+			<h1>%s</h1>
+			<p>%s</p>
+			<a href="roletalk://verify" class="btn">Return to App</a>
+		</div>
+	</body>
+	</html>`, iconColor, iconColor, iconColor, icon, title, message)
+
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(html))
 }
 
 // RequestPasswordReset initiates the password recovery process.

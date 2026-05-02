@@ -169,7 +169,7 @@ func New(ctx context.Context) (*App, error) {
 		Username: cfg.SMTP.Username, Password: cfg.SMTP.Password,
 		FromAddress: cfg.SMTP.FromAddress,
 	})
-	authSender, err := mailer.NewAuthSender(genericMailer, cfg.Client.URL)
+	authSender, err := mailer.NewAuthSender(genericMailer, cfg.Client.URL, cfg.API.URL)
 	if err != nil {
 		return nil, fmt.Errorf("app.New: auth_sender: %w", err)
 	}

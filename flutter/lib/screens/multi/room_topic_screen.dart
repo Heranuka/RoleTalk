@@ -43,6 +43,7 @@ class _RoomTopicScreenState extends State<RoomTopicScreen> {
         builder: (_) => HumanSessionScreen(
           topic: topic,
           playerRoles: roles,
+          room: widget.room,
         ),
       ),
     );

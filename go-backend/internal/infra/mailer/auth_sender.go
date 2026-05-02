@@ -7,7 +7,7 @@ import (
 	"embed"
 	"fmt"
 	"html/template"
-	"io/fs" // Добавь этот импорт
+	"io/fs"
 
 	"go-backend/pkg/mailer"
 )
@@ -15,10 +15,12 @@ import (
 //go:embed templates/*.html
 var templateFS embed.FS
 
-// AuthSender handles authentication-related emails.
+// AuthSender handles authentication-related emails, providing links to both
+// the web-based API handlers and the frontend client.
 type AuthSender struct {
 	mailer    *mailer.Mailer
 	clientURL string
+	apiURL    string
 	templates *template.Template
 }
 
@@ -26,10 +28,10 @@ type templateData struct {
 	ActionURL string
 }
 
-// NewAuthSender initializes the mailer and parses embedded templates using fs.Sub.
-func NewAuthSender(m *mailer.Mailer, clientURL string) (*AuthSender, error) {
+// NewAuthSender initializes the mailer and parses embedded templates.
+// It requires both clientURL (frontend) and apiURL (backend) to generate correct links.
+func NewAuthSender(m *mailer.Mailer, clientURL string, apiURL string) (*AuthSender, error) {
 	// Rooting the filesystem at "templates" folder to avoid name prefix issues.
-	// This makes template names identical to their filenames (e.g., "reset_password.html").
 	strippedFS, err := fs.Sub(templateFS, "templates")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create template sub-filesystem: %w", err)
@@ -43,29 +45,34 @@ func NewAuthSender(m *mailer.Mailer, clientURL string) (*AuthSender, error) {
 	return &AuthSender{
 		mailer:    m,
 		clientURL: clientURL,
+		apiURL:    apiURL,
 		templates: tmpl,
 	}, nil
 }
 
 // SendVerificationEmail dispatches an activation link.
+// IMPORTANT: This link points to the API URL (port 8080) to trigger the browser landing page.
 func (s *AuthSender) SendVerificationEmail(ctx context.Context, toEmail string, rawToken string) error {
 	subject := "Confirm your RoleTalk account"
-	link := fmt.Sprintf("%s/verify-email?token=%s", s.clientURL, rawToken)
+
+	// Points to the GET handler: /api/v1/auth/verify-email
+	link := fmt.Sprintf("%s/api/v1/auth/verify-email?token=%s", s.apiURL, rawToken)
 
 	data := templateData{ActionURL: link}
 
-	// Now we use only the filename, without "templates/" prefix.
 	return s.executeAndSend(ctx, "verify_email.html", toEmail, subject, data)
 }
 
 // SendPasswordResetEmail dispatches a recovery link.
+// Usually points to the Frontend Client (port 5173) where the "New Password" form lives.
 func (s *AuthSender) SendPasswordResetEmail(ctx context.Context, toEmail string, rawToken string) error {
 	subject := "Reset your RoleTalk password"
+
+	// Points to the Frontend: /reset-password
 	link := fmt.Sprintf("%s/reset-password?token=%s", s.clientURL, rawToken)
 
 	data := templateData{ActionURL: link}
 
-	// Use only the filename.
 	return s.executeAndSend(ctx, "reset_password.html", toEmail, subject, data)
 }
 
@@ -73,7 +80,6 @@ func (s *AuthSender) SendPasswordResetEmail(ctx context.Context, toEmail string,
 func (s *AuthSender) executeAndSend(ctx context.Context, templateName, toEmail, subject string, data templateData) error {
 	var body bytes.Buffer
 
-	// templateName is now "reset_password.html" or "verify_email.html"
 	if err := s.templates.ExecuteTemplate(&body, templateName, data); err != nil {
 		return fmt.Errorf("failed to render template %s: %w", templateName, err)
 	}

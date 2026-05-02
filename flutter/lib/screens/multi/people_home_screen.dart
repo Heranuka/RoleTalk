@@ -5,6 +5,7 @@ import '../../theme/app_theme.dart';
 import '../../services/app_localizations.dart';
 import 'room_wait_screen.dart';
 import 'community_themes_screen.dart';
+import 'create_room_screen.dart';
 
 import '../../services/topic_service.dart';
 import '../../models/topic_vote.dart';
@@ -30,6 +31,7 @@ class _PeopleHomeScreenState extends State<PeopleHomeScreen> {
   Future<void> _fetchCommunityTopics() async {
     try {
       final data = await TopicService.instance.getCommunityTopics();
+      if (!mounted) return;
       setState(() {
         _communityTopics = data.map((t) => TopicVote(
           id: t['id'],
@@ -54,7 +56,7 @@ class _PeopleHomeScreenState extends State<PeopleHomeScreen> {
       });
     } catch (e) {
       debugPrint("Error fetching community topics: $e");
-      setState(() => _loadingTopics = false);
+      if (mounted) setState(() => _loadingTopics = false);
     }
   }
 
@@ -64,13 +66,12 @@ class _PeopleHomeScreenState extends State<PeopleHomeScreen> {
     super.dispose();
   }
 
-  // Логика фильтрации комнат
   List<VoiceRoom> get _rooms {
     final q = _search.text.trim().toLowerCase();
     final all = MockRepository.voiceRooms;
     if (q.isEmpty) return all;
     return all.where((r) =>
-        r.title.toLowerCase().contains(q) ||
+    r.title.toLowerCase().contains(q) ||
         r.subtitle.toLowerCase().contains(q) ||
         r.levelTag.toLowerCase().contains(q)
     ).toList();
@@ -83,245 +84,307 @@ class _PeopleHomeScreenState extends State<PeopleHomeScreen> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      appBar: AppBar(
-        centerTitle: false,
-        title: Text(
-          AppLocalizations.of(context, 'tab_people'),
-          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 24),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add_box_outlined, color: AppTheme.primary, size: 28),
-            onPressed: () => _showCreateOptions(context),
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: CustomScrollView(
-        slivers: [
-          // 1. ПОИСК
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-              child: TextField(
-                controller: _search,
-                onChanged: (_) => setState(() {}),
-                decoration: InputDecoration(
-                  hintText: AppLocalizations.of(context, 'search_hint'),
-                  prefixIcon: const Icon(Icons.search_rounded),
-                  filled: true,
-                  fillColor: theme.cardColor,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 0),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: isDark ? Colors.white10 : Colors.black12),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: isDark ? Colors.white10 : Colors.black12),
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          // 2. ТОП СЦЕНАРИЕВ СООБЩЕСТВА (UGC + Лайки)
-          SliverToBoxAdapter(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildSectionHeader(
-                  AppLocalizations.of(context, 'top_community_themes'),
-                  showSeeAll: true, // ВКЛЮЧАЕМ КНОПКУ "ВСЕ"
-                ),
-                SizedBox(
-                  height: 160,
-                  child: _loadingTopics 
-                    ? const Center(child: CircularProgressIndicator())
-                    : _communityTopics.isEmpty
-                      ? const Center(child: Text("No community topics yet"))
-                      : ListView.separated(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _communityTopics.length, 
-                        separatorBuilder: (_, __) => const SizedBox(width: 12),
-                        itemBuilder: (context, i) {
-                          final topic = _communityTopics[i];
-                          return _buildTrendingCard(
-                            emoji: topic.emoji,
-                            title: topic.title,
-                            author: topic.authorName,
-                            likes: topic.votes,
-                            topic: topic,
-                          );
-                        },
-                      ),
-                ),
-              ],
-            ),
-          ),
-
-          // 3. СПИСОК АКТИВНЫХ КОМНАТ
-          SliverToBoxAdapter(
-            child: _buildSectionHeader(AppLocalizations.of(context, 'active_rooms')),
-          ),
-          
-          if (rooms.isEmpty)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: Center(child: Text(AppLocalizations.of(context, 'no_results'))),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 40),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, i) => _buildLiveRoomSlim(context, rooms[i]),
-                  childCount: rooms.length,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // ОБНОВЛЕННЫЙ ЗАГОЛОВОК С КНОПКОЙ "ВСЕ"
-Widget _buildSectionHeader(String title, {bool showSeeAll = false}) {
-  return Padding(
-    padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
-    child: Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
-        if (showSeeAll)
-          GestureDetector(
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CommunityThemesScreen())),
-            child: Text(
-              AppLocalizations.of(context, 'see_all'),
-              style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold, fontSize: 13),
-            ),
-          ),
-      ],
-    ),
-  );
-}
-
-  // КАРТОЧКА С ЛАЙКАМИ (Твоя гениальная идея)
-  Widget _buildTrendingCard({
-    required String emoji, 
-    required String title, 
-    required String author, 
-    required int likes,
-    required TopicVote topic,
-  }) {
-    final theme = Theme.of(context);
-    return GestureDetector(
-      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CommunityThemesScreen())),
-      child: Container(
-        width: 150,
-        padding: const EdgeInsets.all(16),
+      body: Container(
         decoration: BoxDecoration(
-          color: theme.cardColor,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: theme.dividerColor.withOpacity(0.08)),
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: isDark
+                ? [const Color(0xFF1A1A1A), const Color(0xFF121212)]
+                : [const Color(0xFFF9FAFB), const Color(0xFFF3F4F6)],
+          ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppTheme.primary.withOpacity(0.1), 
-                shape: BoxShape.circle
+        child: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            // 1. HEADER
+            SliverAppBar(
+              expandedHeight: 120,
+              floating: true,
+              pinned: true,
+              stretch: true,
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              flexibleSpace: FlexibleSpaceBar(
+                centerTitle: false,
+                titlePadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                title: Text(
+                  AppLocalizations.of(context, 'tab_people'),
+                  style: theme.textTheme.headlineMedium?.copyWith(
+                    fontSize: 28,
+                    color: isDark ? Colors.white : AppTheme.textPrimary,
+                  ),
+                ),
               ),
-              child: Text(emoji, style: const TextStyle(fontSize: 22)),
-            ),
-            const Spacer(),
-            Text(
-              title, 
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, height: 1.1), 
-              maxLines: 1, 
-              overflow: TextOverflow.ellipsis
-            ),
-            Text(author, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                const Icon(Icons.favorite, color: Colors.redAccent, size: 14),
-                const SizedBox(width: 4),
-                Text(
-                  likes.toString(), 
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900)
+              actions: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.add_rounded, color: AppTheme.primary, size: 28),
+                      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateRoomScreen())),
+                    ),
+                  ),
                 ),
               ],
             ),
+
+            // 2. TRENDING TOPICS
+            SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionHeader(
+                    context,
+                    title: AppLocalizations.of(context, 'top_community_themes'),
+                    showSeeAll: true,
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 180,
+                    child: _loadingTopics
+                        ? const Center(child: CircularProgressIndicator())
+                        : _communityTopics.isEmpty
+                        ? Center(
+                      child: Text(
+                        AppLocalizations.of(context, 'no_community_topics'),
+                        style: TextStyle(color: theme.hintColor, fontWeight: FontWeight.w600),
+                      ),
+                    )
+                        : ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      itemCount: _communityTopics.length,
+                      separatorBuilder: (_, __) => const SizedBox(width: 16),
+                      itemBuilder: (context, i) => _buildTrendingCard(topic: _communityTopics[i]),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // 3. ACTIVE ROOMS HEADER
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.only(top: 24.0),
+                child: _buildSectionHeader(
+                  context,
+                  title: AppLocalizations.of(context, 'active_rooms'), // Именованный title
+                ),
+              ),
+            ),
+
+            // 4. ROOMS LIST OR EMPTY STATE
+            if (rooms.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.people_outline_rounded,
+                        size: 64,
+                        color: AppTheme.textSecondary.withOpacity(0.3),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        AppLocalizations.of(context, 'no_results'),
+                        style: const TextStyle(color: AppTheme.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                        (context, i) => _buildLiveRoomPremium(context, rooms[i]),
+                    childCount: rooms.length,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
     );
   }
 
-  // ТОНКАЯ КАРТОЧКА КОМНАТЫ (Slim Design)
-  Widget _buildLiveRoomSlim(BuildContext context, VoiceRoom room) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(bottom: 10),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05)),
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        leading: Container(
-          width: 44,
-          height: 44,
-          decoration: BoxDecoration(
-            color: room.accent.withOpacity(0.12),
-            borderRadius: BorderRadius.circular(12),
+  // --- HELPER WIDGETS ---
+
+  Widget _buildSectionHeader(
+      BuildContext context, {
+        required String title, // Теперь это именованный параметр
+        bool showSeeAll = false,
+      }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.w900,
+              fontSize: 18,
+              letterSpacing: -0.5,
+            ),
           ),
-          alignment: Alignment.center,
-          child: Text(room.emoji, style: const TextStyle(fontSize: 22)),
-        ),
-        title: Text(
-          room.title, 
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, height: 1.2)
-        ),
-        subtitle: Text(
-          '${room.onlineCount} ${AppLocalizations.of(context, 'online')} • ${room.levelTag}', 
-          style: const TextStyle(fontSize: 11)
-        ),
-        trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey),
-        onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => RoomWaitScreen(room: room))),
+          if (showSeeAll)
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const CommunityThemesScreen(),
+                  ),
+                );
+              },
+              style: TextButton.styleFrom(foregroundColor: AppTheme.primary),
+              child: Text(
+                AppLocalizations.of(context, 'see_all'),
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+              ),
+            ),
+        ],
       ),
     );
   }
 
-  void _showCreateOptions(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 12),
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
-            ListTile(
-              leading: const Icon(Icons.add_to_photos_rounded, color: AppTheme.primary),
-              title: const Text('Опубликовать сценарий', style: TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: const Text('Ваша идея попадет в ленту сообщества'),
-              onTap: () => Navigator.pop(context),
+  Widget _buildTrendingCard({required TopicVote topic}) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Container(
+      width: 160,
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: AppTheme.premiumShadow,
+        border: Border.all(color: isDark ? Colors.white10 : Colors.black.withOpacity(0.03)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CommunityThemesScreen())),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(topic.emoji, style: const TextStyle(fontSize: 24)),
+                  ),
+                  const Spacer(),
+                  Text(
+                      topic.title,
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, height: 1.2),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis
+                  ),
+                  const SizedBox(height: 4),
+                  Text(topic.authorName, style: const TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Icon(Icons.favorite_rounded, color: Colors.pinkAccent, size: 14),
+                      const SizedBox(width: 4),
+                      Text(
+                          topic.votes.toString(),
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900)
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-            ListTile(
-              leading: const Icon(Icons.groups_rounded, color: AppTheme.primary),
-              title: const Text('Создать комнату', style: TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: const Text('Мгновенное лобби для общения с людьми'),
-              onTap: () => Navigator.pop(context),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLiveRoomPremium(BuildContext context, VoiceRoom room) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: AppTheme.premiumShadow,
+          border: Border.all(color: isDark ? Colors.white10 : Colors.black.withOpacity(0.03)),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => RoomWaitScreen(room: room))),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: room.accent.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(room.emoji, style: const TextStyle(fontSize: 28)),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                              room.title,
+                              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, height: 1.2)
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: const BoxDecoration(
+                                  color: AppTheme.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                  '${room.onlineCount} ${AppLocalizations.of(context, 'online')} • ${room.levelTag}',
+                                  style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary, fontWeight: FontWeight.w600)
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right_rounded, color: AppTheme.textSecondary.withOpacity(0.5)),
+                  ],
+                ),
+              ),
             ),
-            const SizedBox(height: 20),
-          ],
+          ),
         ),
       ),
     );

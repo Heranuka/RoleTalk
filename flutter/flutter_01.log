@@ -1,0 +1,110 @@
+Flutter crash report.
+Please report a bug at https://github.com/flutter/flutter/issues.
+
+## command
+
+flutter run
+
+## exception
+
+ProcessException: ProcessException: No such file or directory
+  Command: /Applications/Google Chrome.app/Contents/MacOS/Google Chrome http://127.0.0.1:57936/pp7OiG0os2g=/devtools/?uri=ws://127.0.0.1:57936/pp7OiG0os2g=/ws
+
+```
+#0      _ProcessImpl._start (dart:io-patch/process_patch.dart:411:33)
+#1      Process.start (dart:io-patch/process_patch.dart:42:20)
+#2      Chrome._startProcess (package:browser_launcher/src/chrome.dart:177:26)
+#3      Chrome.start (package:browser_launcher/src/chrome.dart:170:13)
+#4      DartDevelopmentServiceLocalOperationsMixin.launchDevToolsInBrowser (package:flutter_tools/src/base/dds.dart:167:22)
+#5      TerminalHandler._commonTerminalInputHandler.<anonymous closure> (package:flutter_tools/src/resident_runner.dart:1885:46)
+#6      Iterable.fold (dart:core/iterable.dart:427:44)
+#7      TerminalHandler._commonTerminalInputHandler (package:flutter_tools/src/resident_runner.dart:1882:16)
+#8      TerminalHandler.processTerminalInput (package:flutter_tools/src/resident_runner.dart:1906:13)
+#9      _rootRunUnary (dart:async/zone_root.dart:48:47)
+#10     _CustomZone.runUnary (dart:async/zone.dart:733:19)
+#11     _CustomZone.runUnaryGuarded (dart:async/zone.dart:633:7)
+#12     _BufferingStreamSubscription._sendData (dart:async/stream_impl.dart:381:11)
+#13     _BufferingStreamSubscription._add (dart:async/stream_impl.dart:312:7)
+#14     _SyncBroadcastStreamController._sendData (dart:async/broadcast_stream_controller.dart:385:25)
+#15     _BroadcastStreamController.add (dart:async/broadcast_stream_controller.dart:257:5)
+#16     _AsBroadcastStreamController.add (dart:async/broadcast_stream_controller.dart:488:11)
+#17     _rootRunUnary (dart:async/zone_root.dart:48:47)
+#18     _CustomZone.runUnary (dart:async/zone.dart:733:19)
+#19     _CustomZone.runUnaryGuarded (dart:async/zone.dart:633:7)
+#20     _BufferingStreamSubscription._sendData (dart:async/stream_impl.dart:381:11)
+#21     _BufferingStreamSubscription._add (dart:async/stream_impl.dart:312:7)
+#22     _SinkTransformerStreamSubscription._add (dart:async/stream_transformers.dart:67:11)
+#23     _EventSinkWrapper.add (dart:async/stream_transformers.dart:13:11)
+#24     _StringAdapterSink.add (dart:convert/string_conversion.dart:228:11)
+#25     _StringAdapterSink.addSlice (dart:convert/string_conversion.dart:233:7)
+#26     _Utf8ConversionSink.addSlice (dart:convert/string_conversion.dart:313:20)
+#27     _ErrorHandlingAsciiDecoderSink.addSlice (dart:convert/ascii.dart:285:17)
+#28     _ErrorHandlingAsciiDecoderSink.add (dart:convert/ascii.dart:271:5)
+#29     _ConverterStreamEventSink.add (dart:convert/chunked_conversion.dart:70:18)
+#30     _SinkTransformerStreamSubscription._handleData (dart:async/stream_transformers.dart:115:24)
+#31     _rootRunUnary (dart:async/zone_root.dart:48:47)
+#32     _CustomZone.runUnary (dart:async/zone.dart:733:19)
+#33     _CustomZone.runUnaryGuarded (dart:async/zone.dart:633:7)
+#34     _BufferingStreamSubscription._sendData (dart:async/stream_impl.dart:381:11)
+#35     _BufferingStreamSubscription._add (dart:async/stream_impl.dart:312:7)
+#36     _SyncStreamControllerDispatch._sendData (dart:async/stream_controller.dart:798:19)
+#37     _StreamController._add (dart:async/stream_controller.dart:663:7)
+#38     _StreamController.add (dart:async/stream_controller.dart:618:5)
+#39     _Socket._onData (dart:io-patch/socket_patch.dart:2874:41)
+#40     _rootRunUnary (dart:async/zone_root.dart:56:13)
+#41     _CustomZone.runUnary (dart:async/zone.dart:733:19)
+#42     _CustomZone.runUnaryGuarded (dart:async/zone.dart:633:7)
+#43     _BufferingStreamSubscription._sendData (dart:async/stream_impl.dart:381:11)
+#44     _BufferingStreamSubscription._add (dart:async/stream_impl.dart:312:7)
+#45     _SyncStreamControllerDispatch._sendData (dart:async/stream_controller.dart:798:19)
+#46     _StreamController._add (dart:async/stream_controller.dart:663:7)
+#47     _StreamController.add (dart:async/stream_controller.dart:618:5)
+#48     new _RawSocket.<anonymous closure> (dart:io-patch/socket_patch.dart:2312:31)
+#49     _NativeSocket.issueReadEvent.issue (dart:io-patch/socket_patch.dart:1647:14)
+#50     _microtaskLoop (dart:async/schedule_microtask.dart:40:35)
+#51     _startMicrotaskLoop (dart:async/schedule_microtask.dart:49:5)
+#52     _runPendingImmediateCallback (dart:isolate-patch/isolate_patch.dart:127:13)
+#53     _RawReceivePort._handleMessage (dart:isolate-patch/isolate_patch.dart:194:5)
+```
+
+## flutter doctor
+
+```
+[33m[!][39m Flutter (Channel stable, 3.41.6, on macOS 26.4.1 25E253 darwin-arm64, locale en-RU) [270ms]
+    [32m•[39m Flutter version 3.41.6 on channel stable at /Users/ashabhaziev/development/flutter
+    [33m![39m Warning: `dart` on your path resolves to /opt/homebrew/Cellar/dart/3.11.5/libexec/bin/dart, which is not inside your current Flutter SDK checkout at /Users/ashabhaziev/development/flutter. Consider adding
+      /Users/ashabhaziev/development/flutter/bin to the front of your path.
+    [32m•[39m Upstream repository https://github.com/flutter/flutter.git
+    [32m•[39m Framework revision db50e20168 (5 weeks ago), 2026-03-25 16:21:00 -0700
+    [32m•[39m Engine revision 425cfb54d0
+    [32m•[39m Dart version 3.11.4
+    [32m•[39m DevTools version 2.54.2
+    [32m•[39m Feature flags: enable-web, enable-linux-desktop, enable-macos-desktop, enable-windows-desktop, enable-android, enable-ios, cli-animations, enable-native-assets, omit-legacy-version-file, enable-lldb-debugging,
+      enable-uiscene-migration
+    [32m•[39m If those were intentional, you can disregard the above warnings; however it is recommended to use "git" directly to perform update checks and upgrades.
+
+[31m[✗][39m Android toolchain - develop for Android devices [203ms]
+    [32m•[39m Android SDK at /opt/homebrew/Caskroom/android-platform-tools/37.0.0
+    [32m•[39m Emulator version unknown
+    [31m✗[39m cmdline-tools component is missing.
+      Try installing or updating Android Studio.
+      Alternatively, download the tools from https://developer.android.com/studio#command-line-tools-only and make sure to set the ANDROID_HOME environment variable.
+      See https://developer.android.com/studio/command-line for more details.
+
+[32m[✓][39m Xcode - develop for iOS and macOS (Xcode 26.4) [1,756ms]
+    [32m•[39m Xcode at /Applications/Xcode.app/Contents/Developer
+    [32m•[39m Build 17E192
+    [32m•[39m CocoaPods version 1.16.2
+
+[31m[✗][39m Chrome - develop for the web (Cannot find Chrome executable at /Applications/Google Chrome.app/Contents/MacOS/Google Chrome) [4ms]
+    [33m![39m Cannot find Chrome. Try setting CHROME_EXECUTABLE to a Chrome executable.
+
+[32m[✓][39m Connected device (2 available) [6.7s]
+    [32m•[39m iPhone 17 Pro (mobile) • 6C6BA95B-710D-4380-8178-55F56F0DB9CC • ios          • com.apple.CoreSimulator.SimRuntime.iOS-26-4 (simulator)
+    [32m•[39m macOS (desktop)        • macos                                • darwin-arm64 • macOS 26.4.1 25E253 darwin-arm64
+
+[32m[✓][39m Network resources [734ms]
+    [32m•[39m All expected network resources are available.
+
+[33m![39m Doctor found issues in 3 categories.
+```

@@ -11,6 +11,8 @@ class VoiceRoom {
     required this.levelTag,
     required this.accent,
     required this.maxPlayers,
+    this.aiJudgeEnabled = false,
+    this.judgePersonality = 'Balanced',
   });
 
   final String id;
@@ -20,7 +22,7 @@ class VoiceRoom {
   final int onlineCount;
   final String levelTag;
   final Color accent;
-
-  /// Сколько человек набирается в лобби (2–4).
   final int maxPlayers;
+  final bool aiJudgeEnabled;
+  final String judgePersonality;
 }

@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import 'friends_screen.dart';
 import 'history_screen.dart';
 import 'skills_screen.dart';
+import 'auth_gate.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key, required this.onLogout});
@@ -16,26 +17,64 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  void _showEditNameDialog(String currentName) {
-    final controller = TextEditingController(text: currentName);
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(AppLocalizations.of(context, 'edit_name')),
-        content: TextField(
-          controller: controller, 
-          autofocus: true,
-          decoration: InputDecoration(hintText: AppLocalizations.of(context, 'name_hint'))
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text(AppLocalizations.of(context, 'cancel'))),
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(AppLocalizations.of(context, 'save'), style: const TextStyle(fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
-    );
+  bool _isVerifying = false;
+  bool _isVerificationSent = false;
+
+  // Главный метод обработки верификации
+  Future<void> _handleVerificationAction() async {
+    final u = AuthService.instance.currentUser;
+    if (u == null) return;
+
+    setState(() => _isVerifying = true);
+
+    try {
+      if (!_isVerificationSent) {
+        // ШАГ 1: Отправляем письмо
+        debugPrint("Sending verification email to: ${u.email}");
+        await AuthService.instance.resendVerification(u.email);
+
+        if (mounted) {
+          setState(() {
+            _isVerificationSent = true;
+            _isVerifying = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Verification link sent! Check your email.')),
+          );
+        }
+      } else {
+        // ШАГ 2: Обновляем профиль (проверяем статус в БД)
+        debugPrint("Refreshing profile to check verification status...");
+        await AuthService.instance.refreshProfile();
+
+        if (mounted) {
+          setState(() {
+            _isVerifying = false;
+            // Если после refreshProfile() поле isVerified стало true,
+            // баннер исчезнет автоматически при перерисовке.
+          });
+
+          final updatedUser = AuthService.instance.currentUser;
+          if (updatedUser?.isVerified ?? false) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Email verified! Banner will now disappear.'), backgroundColor: Colors.green),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Not verified yet. Did you click the link in your email?')),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Verification action error: $e");
+      if (mounted) {
+        setState(() => _isVerifying = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.toString()), backgroundColor: Colors.redAccent),
+        );
+      }
+    }
   }
 
   @override
@@ -43,6 +82,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final u = AuthService.instance.currentUser;
     final store = SettingsStore.instance;
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    // ПРИНТ ДЛЯ ОТЛАДКИ (удали потом)
+    debugPrint("UI Build: user verified = ${u?.isVerified}");
 
     return Scaffold(
       appBar: AppBar(title: Text(AppLocalizations.of(context, 'tab_profile'))),
@@ -50,9 +93,84 @@ class _ProfileScreenState extends State<ProfileScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         children: [
           _buildHeader(u),
-          const SizedBox(height: 32),
-          
-          // РАЗДЕЛ: ОБУЧЕНИЕ (Новый)
+          const SizedBox(height: 24),
+
+          // --- ДИНАМИЧНЫЙ БАННЕР ВЕРИФИКАЦИИ ---
+          if (u != null && !u.isVerified)
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 400),
+              margin: const EdgeInsets.only(bottom: 24),
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: _isVerificationSent ? Colors.blue.withOpacity(0.05) : Colors.orange.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(
+                  color: _isVerificationSent ? Colors.blue.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
+                  width: 1.5,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: _isVerificationSent ? Colors.blue.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          _isVerificationSent ? Icons.mark_email_read_outlined : Icons.mail_lock_outlined,
+                          color: _isVerificationSent ? Colors.blue : Colors.orange,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _isVerificationSent ? 'Check your inbox' : 'Verify your email',
+                              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              _isVerificationSent
+                                  ? 'Click refresh after confirming in email.'
+                                  : 'Full access requires a verified account.',
+                              style: TextStyle(fontSize: 13, color: theme.hintColor, height: 1.2),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _isVerificationSent ? Colors.blue : Colors.orange,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: _isVerifying ? null : _handleVerificationAction,
+                      child: _isVerifying
+                          ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          : Text(
+                        _isVerificationSent ? 'REFRESH / CHECK STATUS' : 'SEND VERIFICATION EMAIL',
+                        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 12, letterSpacing: 0.5),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // --- РАЗДЕЛ: ОБУЧЕНИЕ ---
           _sectionLabel(AppLocalizations.of(context, 'practice_settings')),
           _buildMenuCard(
             icon: Icons.insights_rounded,
@@ -61,8 +179,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SkillsScreen())),
             isHighlight: true,
           ),
-          
-          // Выбор языка практики (переехал сюда)
+
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.school_outlined, color: AppTheme.primary),
@@ -107,7 +224,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _sectionLabel(AppLocalizations.of(context, 'notifications')),
           _buildSwitchTile(AppLocalizations.of(context, 'push_notify'), store.notifyLobbyReady, store.setNotifyLobbyReady),
           _buildSwitchTile(AppLocalizations.of(context, 'vibration'), store.vibrateOnReady, store.setVibrateOnReady),
-          
+
           _buildMenuCard(
             icon: Icons.people_outline,
             title: AppLocalizations.of(context, 'friends_title'),
@@ -125,13 +242,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
           SizedBox(
             width: double.infinity,
             child: OutlinedButton(
-              onPressed: widget.onLogout,
+              onPressed: () async {
+                await AuthService.instance.logout();
+                if (!mounted) return;
+                widget.onLogout();
+                Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => const AuthGate()),
+                      (route) => false,
+                );
+              },
               style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.red,
-                side: const BorderSide(color: Colors.red),
-                padding: const EdgeInsets.symmetric(vertical: 15)
+                  foregroundColor: Colors.red,
+                  side: const BorderSide(color: Colors.red),
+                  padding: const EdgeInsets.symmetric(vertical: 15)
               ),
-              child: Text(AppLocalizations.of(context, 'logout'), style: const TextStyle(fontWeight: FontWeight.bold)),
+              child: Text(
+                  AppLocalizations.of(context, 'logout'),
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
             ),
           ),
           const SizedBox(height: 40),
@@ -140,30 +267,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ... (остальные вспомогательные методы: _buildHeader, _sectionLabel, _themeBtn, _buildMenuCard, _buildSwitchTile как в прошлом коде)
-  
+  // --- ВСПОМОГАТЕЛЬНЫЕ ВИДЖЕТЫ ---
+
+  void _showEditNameDialog(String currentName) {
+    final controller = TextEditingController(text: currentName);
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit display name'),
+        content: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(hintText: 'Enter name')
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Save', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildHeader(u) {
     return Row(
       children: [
-        Stack(
-          children: [
-            CircleAvatar(
-              radius: 35,
-              backgroundColor: AppTheme.primarySoft,
-              child: Text(
-                u?.displayName?[0].toUpperCase() ?? '?', 
-                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.primary)
-              ),
-            ),
-            Positioned(
-              bottom: 0,
-              right: 0,
-              child: GestureDetector(
-                onTap: () {}, 
-                child: const CircleAvatar(radius: 12, backgroundColor: AppTheme.primary, child: Icon(Icons.camera_alt, size: 12, color: Colors.white)),
-              ),
-            ),
-          ],
+        CircleAvatar(
+          radius: 35,
+          backgroundColor: AppTheme.primarySoft,
+          child: Text(
+              u?.displayName?[0].toUpperCase() ?? '?',
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.primary)
+          ),
         ),
         const SizedBox(width: 16),
         Expanded(
@@ -234,8 +371,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       color: isHighlight ? AppTheme.primary.withOpacity(0.05) : Theme.of(context).cardColor,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16), 
-        side: BorderSide(color: isHighlight ? AppTheme.primary : Colors.grey.withOpacity(0.15))
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: isHighlight ? AppTheme.primary : Colors.grey.withOpacity(0.15))
       ),
       child: ListTile(
         leading: Icon(icon, color: AppTheme.primary),

@@ -120,6 +120,14 @@ func (s *Service) Update(ctx context.Context, input UpdateInput) error {
 		if input.Username != nil {
 			u.Username = input.Username
 		}
+
+		if input.InterfaceLang != nil {
+			u.InterfaceLang = *input.InterfaceLang
+		}
+		if input.PracticeLang != nil {
+			u.PracticeLang = *input.PracticeLang
+		}
+
 		if input.PhotoURL != nil {
 			u.PhotoURL = input.PhotoURL // Normalized to PhotoURL in domain
 		}

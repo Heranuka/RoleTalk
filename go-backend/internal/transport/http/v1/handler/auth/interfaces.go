@@ -18,6 +18,8 @@ type Service interface {
 	// It returns a short-lived access token and a long-lived refresh token on success.
 	Login(ctx context.Context, input serviceauth.LoginInput) (string, string, error)
 
+	Logout(ctx context.Context, refreshToken string) error
+
 	// VerifyEmail validates the provided secure token and updates the user's
 	// status to indicate that their email address has been successfully confirmed.
 	VerifyEmail(ctx context.Context, rawToken string) error

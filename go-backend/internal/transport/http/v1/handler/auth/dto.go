@@ -16,6 +16,11 @@ type loginRequest struct {
 	Password string `json:"password" validate:"required"`
 }
 
+// logoutRequest represents the JSON payload to terminate a session.
+type logoutRequest struct {
+	RefreshToken string `json:"refresh_token" validate:"required"`
+}
+
 // verifyEmailRequest represents the payload for confirming a user's email address.
 type verifyEmailRequest struct {
 	Token string `json:"token" validate:"required"`

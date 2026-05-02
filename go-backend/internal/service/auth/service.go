@@ -19,6 +19,7 @@ import (
 	"go-backend/internal/config"
 	"go-backend/internal/logger"
 	"go-backend/internal/models/domain"
+	"go-backend/internal/repository/auth_session"
 	tokenrepo "go-backend/internal/repository/verificationtoken"
 	"go-backend/internal/service/user"
 )
@@ -69,43 +70,24 @@ func (s *Service) Register(ctx context.Context, input RegisterInput) error {
 	defer span.End()
 
 	log := logger.FromContext(ctx, s.log)
-	var rawToken string
 
 	err := s.transactor.WithinTx(ctx, func(txCtx context.Context) error {
-		// 1. Create the user
-		userID, err := s.userService.CreateWithPassword(txCtx, user.CreateWithPasswordInput{
+		_, err := s.userService.CreateWithPassword(txCtx, user.CreateWithPasswordInput{
 			Email:       input.Email,
 			Password:    input.Password,
 			Username:    input.Username,
-			DisplayName: input.Email, // Default DisplayName to Email for initial registration
+			DisplayName: input.DisplayName,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create user: %w", err)
 		}
 
-		// 2. Generate verification token
-		tokenStr, entity, err := domain.NewVerificationToken(userID, domain.TokenPurposeEmailVerification, s.authConfig.EmailVerificationTTL)
-		if err != nil {
-			return fmt.Errorf("generate token: %w", err)
-		}
-
-		// 3. Save token hash to DB
-		if err := s.tokenRepo.Create(txCtx, entity); err != nil {
-			return fmt.Errorf("save token: %w", err)
-		}
-
-		rawToken = tokenStr
 		return nil
 	})
 
 	if err != nil {
 		span.RecordError(err)
-		return fmt.Errorf("create token: %w", err)
-	}
-
-	// 4. Send email (outside the DB transaction)
-	if err := s.emailSender.SendVerificationEmail(ctx, input.Email, rawToken); err != nil {
-		log.Errorw("failed to send verification email", "email", input.Email, "error", err)
+		return fmt.Errorf("registration failed: %w", err)
 	}
 
 	log.Infow("user registered successfully", "email", input.Email)
@@ -167,11 +149,6 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (string, string, 
 		return "", "", ErrInvalidCredentials
 	}
 
-	if !u.IsEmailVerified {
-		log.Warnw("failed login attempt: email not verified", "user_id", u.ID)
-		return "", "", ErrEmailNotVerified
-	}
-
 	at, rt, err := s.issueTokens(ctx, u)
 	if err != nil {
 		span.RecordError(err)
@@ -180,6 +157,37 @@ func (s *Service) Login(ctx context.Context, input LoginInput) (string, string, 
 
 	log.Infow("user logged in", "user_id", u.ID)
 	return at, rt, nil
+}
+
+// Logout invalidates an active refresh token session.
+// It is idempotent: if the token is already revoked or doesn't exist, it returns no error.
+func (s *Service) Logout(ctx context.Context, refreshToken string) error {
+	ctx, span := tracer.Start(ctx, "Service.Auth.Logout")
+	defer span.End()
+
+	log := logger.FromContext(ctx, s.log)
+
+	if refreshToken == "" {
+		return ErrRefreshTokenInvalid
+	}
+
+	// 1. We must hash the token because the DB stores SHA-256 hashes, not raw strings
+	tokenHash := hashToken(refreshToken)
+
+	// 2. Revoke the session in the database
+	if err := s.sessionRepo.Revoke(ctx, tokenHash); err != nil {
+		// If session is not found, logout is effectively successful (idempotency)
+		if errors.Is(err, auth_session.ErrSessionNotFound) {
+			log.Debugw("logout: session already gone or invalid", "hash_prefix", tokenHash[:8])
+			return nil
+		}
+
+		log.Errorw("failed to revoke auth session", "error", err)
+		return fmt.Errorf("session revocation failed: %w", err)
+	}
+
+	log.Infow("user logged out successfully", "hash_prefix", tokenHash[:8])
+	return nil
 }
 
 // RequestPasswordReset generates a reset token and sends an email.

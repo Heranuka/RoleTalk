@@ -27,9 +27,10 @@ type sessionResponse struct {
 // toSessionResponse maps the domain session entity to a transport DTO.
 func toSessionResponse(s *domain.PracticeSession) sessionResponse {
 	return sessionResponse{
-		ID:     s.ID,
-		UserID: s.UserID,
-
+		ID:        s.ID,
+		UserID:    s.UserID,
+		TopicID:   s.TopicID,
+		Status:    s.Status,
 		CreatedAt: s.CreatedAt,
 		UpdatedAt: s.UpdatedAt,
 	}

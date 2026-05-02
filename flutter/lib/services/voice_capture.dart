@@ -22,21 +22,31 @@ class VoiceCapture {
   Future<void> start() async {
     if (!isSupported) return;
     try {
-      if (!await _rec.hasPermission()) return;
+      bool hasPerm = await _rec.hasPermission();
+      if (!hasPerm) {
+        print("CRITICAL: No microphone permission!");
+        return;
+      }
       final dir = await getTemporaryDirectory();
       final path = '${dir.path}/vs_${DateTime.now().millisecondsSinceEpoch}.m4a';
+
       await _rec.start(
         const RecordConfig(encoder: AudioEncoder.aacLc),
         path: path,
       );
-    } catch (_) {}
+      print("DEBUG: Recording started at $path");
+    } catch (e) {
+      print("CRITICAL: Error starting recorder: $e"); // Добавьте это
+    }
   }
 
   Future<String?> stop() async {
-    if (!isSupported) return null;
     try {
-      return await _rec.stop();
-    } catch (_) {
+      final path = await _rec.stop();
+      print("DEBUG: Recorder stopped, file: $path");
+      return path;
+    } catch (e) {
+      print("CRITICAL: Error stopping recorder: $e"); // Добавьте это
       return null;
     }
   }

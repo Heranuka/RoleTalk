@@ -19,6 +19,30 @@ class AppTheme {
   static const Color bubbleMine = Color(0xFF95EC69);
   static const Color bubbleMineText = Colors.black;
 
+  // --- PREMIUM DESIGN TOKENS ---
+  static const LinearGradient primaryGradient = LinearGradient(
+    colors: [Color(0xFF22C55E), Color(0xFF10B981)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static List<BoxShadow> get premiumShadow => [
+    BoxShadow(
+      color: Colors.black.withOpacity(0.05),
+      blurRadius: 20,
+      offset: const Offset(0, 10),
+    ),
+  ];
+
+  static BoxDecoration glassDecoration(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return BoxDecoration(
+      color: isDark ? Colors.white.withOpacity(0.05) : Colors.white.withOpacity(0.7),
+      borderRadius: BorderRadius.circular(24),
+      border: Border.all(color: isDark ? Colors.white10 : Colors.white24),
+    );
+  }
+
   // --- МЕТОДЫ ГЕНЕРАЦИИ ТЕМ ---
   static ThemeData light() => _base(
     Brightness.light, 

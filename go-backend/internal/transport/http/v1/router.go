@@ -88,7 +88,9 @@ func NewRouter(
 			}
 			r.Post("/register", handlers.Auth.Register)
 			r.Post("/login", handlers.Auth.Login)
-			r.Post("/verify-email", handlers.Auth.VerifyEmail)
+			r.Post("/logout", handlers.Auth.Logout)
+			r.Get("/verify-email", handlers.Auth.VerifyEmailWeb) // Link for the browser
+			r.Post("/verify-email", handlers.Auth.VerifyEmail)   // API for the app
 			r.Post("/forgot-password", handlers.Auth.RequestPasswordReset)
 			r.Post("/reset-password", handlers.Auth.ResetPassword)
 			r.Post("/google/callback", handlers.Auth.GoogleCallback)

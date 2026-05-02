@@ -5,6 +5,7 @@ package middleware
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -74,7 +75,7 @@ func Auth(secret string, log *zap.SugaredLogger) func(http.Handler) http.Handler
 			}
 
 			tokenString := parts[1]
-
+			fmt.Printf("--- JWT SECRET IN MIDDLEWARE: [%s] ---\n", secret)
 			// 3. Validate the token and extract the userID.
 			userID, err := validateToken(tokenString, secret)
 			if err != nil {

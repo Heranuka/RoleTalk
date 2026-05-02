@@ -66,8 +66,8 @@ func (s *Service) StartSession(ctx context.Context, userID, topicID uuid.UUID) (
 	// 2. Check if user already has an active session
 	active, err := s.repo.GetActiveByUserID(ctx, userID)
 	if err == nil && active != nil {
-		log.Warnw("user attempted to start multiple sessions", "user_id", userID)
-		return uuid.Nil, ErrActiveSessionExists
+		log.Infow("user resumes active session", "session_id", active.ID, "user_id", userID)
+		return active.ID, nil
 	}
 
 	// 3. Create domain entity (PracticeSession instead of Session)

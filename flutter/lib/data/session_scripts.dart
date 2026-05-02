@@ -10,13 +10,13 @@ class SessionScripts {
   static final Map<String, List<SessionLine>> _scripts = {
     'custom': [
       SessionLine.director("Режиссер: Сцена сгенерирована. Вы начинаете."),
-      SessionLine.user("Привет! Я хотел обсудить...", hint: "Просто начните разговор по вашей теме."),
-      SessionLine.partner("Привет. Да, слушаю тебя внимательно.", hint: "Раскройте суть проблемы."),
+      SessionLine.user("Привет! Я хотел обсудить...", hint: "Просто начните разговор по вашей теме.", mood: "Curious", reaction: "👋"),
+      SessionLine.partner("Привет. Да, слушаю тебя внимательно.", hint: "Раскройте суть проблемы.", mood: "Attentive", reaction: "👂"),
       SessionLine.director("Режиссер: Ваш собеседник скрещивает руки на груди. Постарайтесь звучать убедительно."),
-      SessionLine.user("Дело в том, что...", hint: "Приведите сильный аргумент."),
-      SessionLine.partner("Интересная мысль. И что ты предлагаешь?", hint: "Предложите компромисс."),
-      SessionLine.user("Давай сделаем так...", hint: "Подведите итог."),
-      SessionLine.partner("Договорились. Отличный план.", hint: "Попрощайтесь."),
+      SessionLine.user("Дело в том, что...", hint: "Приведите сильный аргумент.", mood: "Serious", reaction: "🧐"),
+      SessionLine.partner("Интересная мысль. И что ты предлагаешь?", hint: "Предложите компромисс.", mood: "Intrigued", reaction: "🤔"),
+      SessionLine.user("Давай сделаем так...", hint: "Подведите итог.", mood: "Confident", reaction: "🤝"),
+      SessionLine.partner("Договорились. Отличный план.", hint: "Попрощайтесь.", mood: "Satisfied", reaction: "✅"),
     ],
     'raise': [
       SessionLine.director("Режиссер: Вы в кабинете начальника. Он выглядит занятым."),

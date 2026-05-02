@@ -1,26 +1,29 @@
 class AppUser {
-  const AppUser({
+  final String email;
+  final String displayName;
+  final String provider;
+  final bool isVerified; // Добавь это
+
+  AppUser({
     required this.email,
     required this.displayName,
     required this.provider,
+    this.isVerified = false, // По умолчанию false
   });
 
-  final String email;
-  final String displayName;
-  /// `email` | `google`
-  final String provider;
-
-  Map<String, dynamic> toJson() => {
-        'email': email,
-        'displayName': displayName,
-        'provider': provider,
-      };
-
-  static AppUser fromJson(Map<String, dynamic> j) {
+  factory AppUser.fromJson(Map<String, dynamic> json) {
     return AppUser(
-      email: j['email'] as String,
-      displayName: j['displayName'] as String,
-      provider: j['provider'] as String,
+      email: json['email'],
+      displayName: json['display_name'],
+      provider: json['provider'] ?? 'email',
+      isVerified: json['is_email_verified'] ?? false, // Читай из ответа бэкенда
     );
   }
+
+  Map<String, dynamic> toJson() => {
+    'email': email,
+    'display_name': displayName,
+    'provider': provider,
+    'is_email_verified': isVerified,
+  };
 }

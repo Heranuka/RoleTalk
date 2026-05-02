@@ -5,10 +5,15 @@ import '../data/session_scripts.dart';
 import '../models/session_line.dart';
 import '../models/topic_vote.dart';
 import '../services/voice_capture.dart';
-import '../services/app_localizations.dart'; // Локализация
+import '../services/active_session_manager.dart';
 import '../theme/app_theme.dart';
 import 'feedback_screen.dart';
+
+// ВОТ ЭТИ ДВА ИМПОРТА ОБЯЗАТЕЛЬНЫ:
 import '../services/practice_service.dart';
+import '../services/topic_service.dart';
+
+import '../widgets/session_widgets.dart';
 
 class SessionScreen extends StatefulWidget {
   const SessionScreen({super.key, required this.topic});
@@ -28,6 +33,9 @@ class _SessionScreenState extends State<SessionScreen> with TickerProviderStateM
   DateTime? _micPressStart;
 
   String? _currentHint;
+  String? _currentMood;
+  String? _currentReaction;
+  String _sceneDescription = "Setting the stage...";
   Timer? _idleTimer;
 
   late AnimationController _pulsePartner;
@@ -35,6 +43,8 @@ class _SessionScreenState extends State<SessionScreen> with TickerProviderStateM
 
   late VoiceCapture _voice;
   String? _backendSessionId;
+
+  final List<String> _quickActions = ["Agree", "Disagree", "Ask why?", "Suggest idea"];
 
   @override
   void initState() {
@@ -45,90 +55,116 @@ class _SessionScreenState extends State<SessionScreen> with TickerProviderStateM
     _pulsePartner = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
     _pulseMe = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
 
+    _initAll();
+  }
+
+  Future<void> _initAll() async {
+    if (!ActiveSessionManager.instance.isActive) {
+      ActiveSessionManager.instance.startTopic(widget.topic);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _startSession());
   }
 
   @override
   void dispose() {
     _idleTimer?.cancel();
-    unawaited(_voice.dispose());
+    _voice.dispose();
     _pulsePartner.dispose();
     _pulseMe.dispose();
     super.dispose();
   }
 
-  // Переход на экран фидбека (исправлено)
-  void _goFeedback() {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => FeedbackScreen(topic: widget.topic)),
-    );
-  }
-
-  void _resetIdleTimer() {
-    _idleTimer?.cancel();
-    setState(() {
-      _currentHint = null;
-    });
-  }
-
-  void _startIdleTimer() {
-    _resetIdleTimer();
-    _idleTimer = Timer(const Duration(seconds: 7), () {
-      if (!mounted || _recording || _busy) return;
-      _showHint();
-    });
-  }
-
-  void _showHint() {
-    if (_cursor < _script.length && _script[_cursor].isUser && _script[_cursor].hint != null) {
-      setState(() {
-        _currentHint = '💡 ${_script[_cursor].hint}';
-      });
-    } else {
-      setState(() {
-        _currentHint = '💡 ${AppLocalizations.of(context, 'session_hint_default')}';
-      });
-    }
-  }
-
   Future<void> _startSession() async {
+    setState(() => _busy = true);
     try {
-      final sessionData = await PracticeService.instance.startSession(widget.topic.id);
-      _backendSessionId = sessionData['id'];
+      String realTopicId = widget.topic.id;
+
+      // 1. Проверяем, если ID временный (начинается на 'custom_')
+      if (realTopicId.startsWith('custom_')) {
+        debugPrint("Creating topic in DB for custom prompt...");
+
+        // Создаем тему на бэкенде с ПРАВИЛЬНЫМИ параметрами
+        final topicResponse = await TopicService.instance.createTopic(
+          title: widget.topic.title,
+          description: widget.topic.publicContext.isEmpty
+              ? "Custom user-generated topic"
+              : widget.topic.publicContext,
+          // Вместо prompt используем goal (как требует сервис)
+          goal: widget.topic.goal.isEmpty ? widget.topic.title : widget.topic.goal,
+          myRole: widget.topic.myRole,
+          partnerRole: widget.topic.partnerRole,
+          partnerEmoji: widget.topic.aiEmoji,
+        );
+
+        // Получаем реальный UUID, созданный базой данных Go
+        realTopicId = topicResponse['id'];
+        debugPrint("Topic created successfully in DB with UUID: $realTopicId");
+      }
+
+      // 2. Теперь стартуем сессию с НОРМАЛЬНЫМ UUID
+      debugPrint("Starting practice session with topic UUID: $realTopicId");
+      final sessionData = await PracticeService.instance.startSession(realTopicId);
+
+      if (mounted) {
+        setState(() {
+          _backendSessionId = sessionData['id'];
+          _busy = false;
+        });
+        debugPrint("Session initialized on backend: $_backendSessionId");
+      }
+
     } catch (e) {
-      debugPrint("Error starting session: $e");
-      // Fallback or show error
+      debugPrint("CRITICAL ERROR during session startup: $e");
+      if (mounted) {
+        setState(() => _busy = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error: $e"), backgroundColor: Colors.redAccent),
+        );
+      }
     }
-    await Future<void>.delayed(const Duration(milliseconds: 800));
+
+    // Запускаем сценарий (реплики партнера)
     await _flushPartnerLines();
+  }
+
+  Future<void> _finishVoiceSend() async {
+    if (_backendSessionId == null) return;
+    setState(() => _busy = true);
+    final path = await _voice.stop();
+    if (path != null) {
+      try {
+        await PracticeService.instance.sendVoiceTurn(
+          sessionId: _backendSessionId!,
+          audioPath: path,
+          language: 'English',
+        );
+      } catch (e) {
+        debugPrint("Error in sendVoiceTurn: $e");
+      }
+    }
+    if (mounted) setState(() => _busy = false);
+    _startIdleTimer();
+    unawaited(_flushPartnerLines());
   }
 
   Future<void> _flushPartnerLines() async {
     if (_cursor >= _script.length) return;
-
     while (_cursor < _script.length && !_script[_cursor].isUser) {
       final line = _script[_cursor];
-
       if (line.type == LineType.system) {
+        setState(() => _sceneDescription = line.content.replaceAll("Режиссер: ", ""));
         _cursor++;
       } else {
+        setState(() { _currentMood = line.mood; _currentReaction = line.reaction; });
         _pulsePartner.repeat(reverse: true);
-        final durationMs = 1500 + (line.content.length * 60);
-        await Future<void>.delayed(Duration(milliseconds: durationMs));
-
+        await Future<void>.delayed(Duration(milliseconds: 1000 + (line.content.length * 40)));
         if (!mounted) return;
-        _pulsePartner.stop();
-        _pulsePartner.value = 0.0;
+        _pulsePartner.stop(); _pulsePartner.value = 0.0;
         _cursor++;
       }
-      await Future<void>.delayed(const Duration(milliseconds: 500));
+      await Future<void>.delayed(const Duration(milliseconds: 400));
     }
-
-    if (mounted) {
-      setState(() {});
-      _startIdleTimer();
-    }
+    if (mounted) { setState(() {}); _startIdleTimer(); }
   }
 
   void _onMicDown(PointerDownEvent e) {
@@ -137,7 +173,7 @@ class _SessionScreenState extends State<SessionScreen> with TickerProviderStateM
     _micPressStart = DateTime.now();
     setState(() => _recording = true);
     _pulseMe.repeat(reverse: true);
-    unawaited(_voice.start());
+    _voice.start();
   }
 
   void _onMicUp(PointerEvent e) {
@@ -145,312 +181,177 @@ class _SessionScreenState extends State<SessionScreen> with TickerProviderStateM
     final sec = DateTime.now().difference(_micPressStart!).inMilliseconds / 1000.0;
     _micPressStart = null;
     setState(() => _recording = false);
-    _pulseMe.stop();
-    _pulseMe.value = 0.0;
-
-    if (sec < 0.4) {
-      unawaited(_voice.stop());
-      _startIdleTimer();
-      return;
-    }
-    unawaited(_finishVoiceSend());
+    _pulseMe.stop(); _pulseMe.value = 0.0;
+    if (sec < 0.4) { _voice.stop(); _startIdleTimer(); return; }
+    _finishVoiceSend();
   }
 
-  Future<void> _finishVoiceSend() async {
-    if (_backendSessionId == null) return;
-    setState(() => _busy = true);
+  void _resetIdleTimer() {
+    _idleTimer?.cancel();
+    setState(() => _currentHint = null);
+  }
 
-    // 1. Останавливаем запись
-    final recordPath = await _voice.stop();
-    if (recordPath != null) {
-      try {
-        // 2. Отправляем на бэкенд
-        final response = await PracticeService.instance.sendVoiceTurn(
-          sessionId: _backendSessionId!,
-          audioPath: recordPath,
-          language: 'English', // Можно брать из настроек
-        );
+  void _startIdleTimer() {
+    _resetIdleTimer();
+    _idleTimer = Timer(const Duration(seconds: 10), () {
+      if (!mounted || _recording || _busy) return;
+      _showHint();
+    });
+  }
 
-        final aiText = response['ai_response']['text'];
-        final aiAudioUrl = response['ai_response']['audio_url'];
+  void _showHint() {
+    final line = _cursor < _script.length ? _script[_cursor] : null;
+    setState(() => _currentHint = line?.hint ?? "Your turn!");
+  }
 
-        if (aiAudioUrl != null) {
-          // 3. Имитируем, что партнер начал говорить
-          _pulsePartner.repeat(reverse: true);
+  void _goFeedback() {
+    ActiveSessionManager.instance.removeUnfinished(widget.topic.id);
+    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => FeedbackScreen(topic: widget.topic)));
+  }
 
-          // 4. Проигрываем голос ИИ (ApiClient.baseUrl может понадобиться если URL относительный)
-          // Если аудио_url полный - ок, если нет - надо склеить.
-          String fullAudioUrl = aiAudioUrl;
-          if (!fullAudioUrl.startsWith('http')) {
-            fullAudioUrl = "http://localhost:8080$aiAudioUrl";
-          }
-          
-          await playVoiceFile(fullAudioUrl);
-
-          _pulsePartner.stop();
-          _pulsePartner.value = 0.0;
-        }
-      } catch (e) {
-        debugPrint("Error in voice turn: $e");
-      }
-    }
-
-    if (mounted) setState(() => _busy = false);
-    _startIdleTimer();
+  void _minimize() {
+    ActiveSessionManager.instance.markAsUnfinished(widget.topic);
+    Navigator.of(context).pop();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final progress = (_cursor / _script.length).clamp(0.01, 1.0);
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // TOP BAR
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.topic.title,
-                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${AppLocalizations.of(context, 'session_goal')}: ${widget.topic.goal}',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.primary),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.close_rounded, color: theme.hintColor),
-                    onPressed: _goFeedback,
-                  ),
-                ],
-              ),
-            ),
-
-            // AVATARS AREA (Call Style)
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _RoomAvatar(
-                    name: widget.topic.partnerRole,
-                    emoji: widget.topic.aiEmoji,
-                    animation: _pulsePartner,
-                    isLarge: true,
-                  ),
-                  const SizedBox(height: 60),
-                  _RoomAvatar(
-                    name: "${AppLocalizations.of(context, 'session_you')} (${widget.topic.myRole})",
-                    emoji: '👤',
-                    animation: _pulseMe,
-                    isLarge: false,
-                  ),
-                ],
-              ),
-            ),
-
-            // AI HINT BOX
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: SizedBox(
-                height: 80, // Фиксированная высота, чтобы UI не прыгал
-                child: _currentHint != null
-                    ? AnimatedOpacity(
-                  opacity: 1.0,
-                  duration: const Duration(milliseconds: 300),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: isDark ? Colors.white.withOpacity(0.05) : AppTheme.primarySoft,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppTheme.primary.withOpacity(0.2)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.lightbulb_outline, color: AppTheme.primary, size: 20),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            _currentHint!,
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-                    : const SizedBox.shrink(),
-              ),
-            ),
-
-            // BOTTOM CONTROLS
-            Padding(
-              padding: const EdgeInsets.only(bottom: 40, top: 20),
-              child: Column(
-                children: [
-                  if (_busy && !_recording)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: Text(
-                          AppLocalizations.of(context, 'session_processing'),
-                          style: TextStyle(color: theme.hintColor, fontSize: 12, fontWeight: FontWeight.bold)
-                      ),
-                    ),
-                  Listener(
-                    behavior: HitTestBehavior.opaque,
-                    onPointerDown: _busy ? null : _onMicDown,
-                    onPointerUp: _busy ? null : _onMicUp,
-                    onPointerCancel: _busy ? null : _onMicUp,
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        if (_recording)
-                          _PulseRipple(), // Вынес круги пульсации в отдельный виджет
-                        Container(
-                          width: 80,
-                          height: 80,
-                          decoration: BoxDecoration(
-                            color: _recording ? const Color(0xFFEF4444) : AppTheme.primary,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                  color: AppTheme.primary.withOpacity(0.3),
-                                  blurRadius: 20,
-                                  offset: const Offset(0, 8)
-                              )
-                            ],
-                          ),
-                          child: Icon(
-                              _recording ? Icons.stop_rounded : Icons.mic_rounded,
-                              color: Colors.white,
-                              size: 40
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+      appBar: AppBar(
+        leading: IconButton(icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 32), onPressed: _minimize),
+        title: Text(widget.topic.title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+        actions: [
+          IconButton(icon: const Icon(Icons.check_circle_outline_rounded, color: Colors.greenAccent), onPressed: _goFeedback),
+        ],
       ),
-    );
-  }
-}
-
-// Виджет пульсации для микрофона
-class _PulseRipple extends StatefulWidget {
-  @override
-  State<_PulseRipple> createState() => _PulseRippleState();
-}
-
-class _PulseRippleState extends State<_PulseRipple> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 1))..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return Transform.scale(
-          scale: 1.0 + _controller.value * 0.5,
-          child: Opacity(
-            opacity: 1.0 - _controller.value,
-            child: Container(
-              width: 100,
-              height: 100,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: AnimatedContainer(
+              duration: const Duration(seconds: 2),
               decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0xFFEF4444).withOpacity(0.4),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                  colors: [
+                    _currentMood == 'Serious' ? Colors.red.withOpacity(0.05) : AppTheme.primary.withOpacity(0.05),
+                    theme.scaffoldBackgroundColor,
+                  ],
+                ),
               ),
             ),
           ),
-        );
-      },
-    );
-  }
-}
-
-class _RoomAvatar extends StatelessWidget {
-  const _RoomAvatar({
-    required this.name,
-    required this.emoji,
-    this.animation,
-    this.isLarge = false,
-  });
-
-  final String name;
-  final String emoji;
-  final Animation<double>? animation;
-  final bool isLarge;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final double radius = isLarge ? 65 : 45;
-
-    return Column(
-      children: [
-        AnimatedBuilder(
-          animation: animation!,
-          builder: (context, child) {
-            final double value = animation!.value;
-            return Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: value > 0.01 ? AppTheme.primary : Colors.transparent,
-                  width: 3,
+          SafeArea(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+                  child: LinearProgressIndicator(
+                      value: progress, minHeight: 3,
+                      backgroundColor: theme.dividerColor.withOpacity(0.1), color: AppTheme.primary
+                  ),
                 ),
-                boxShadow: value > 0.01
-                    ? [BoxShadow(color: AppTheme.primary.withOpacity(0.2 * value), blurRadius: 15 * value, spreadRadius: 5 * value)]
-                    : [],
-              ),
-              child: CircleAvatar(
-                radius: radius,
-                backgroundColor: theme.cardColor,
-                child: Text(emoji, style: TextStyle(fontSize: radius * 0.8)),
-              ),
-            );
-          },
-        ),
-        const SizedBox(height: 12),
-        Text(
-          name,
-          style: theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w800),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ],
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white.withOpacity(0.05) : Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10)],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.auto_awesome_rounded, size: 14, color: AppTheme.primary),
+                          const SizedBox(width: 6),
+                          const Text('SCENE', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.grey)),
+                          const Spacer(),
+                          if (_busy) const SizedBox(width: 10, height: 10, child: CircularProgressIndicator(strokeWidth: 2)),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(_sceneDescription, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, height: 1.3), maxLines: 3, overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              SessionAvatar(name: widget.topic.partnerRole, emoji: widget.topic.aiEmoji, animation: _pulsePartner, isLarge: true),
+                              if (_currentReaction != null)
+                                Positioned(top: 0, right: -10, child: Text(_currentReaction!, style: const TextStyle(fontSize: 36))),
+                            ],
+                          ),
+                          const SizedBox(height: 20),
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Row(
+                              children: _quickActions.map((a) => Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: ActionChip(
+                                  label: Text(a), onPressed: () {},
+                                  backgroundColor: AppTheme.primary.withOpacity(0.05),
+                                  labelStyle: const TextStyle(fontSize: 11, color: AppTheme.primary, fontWeight: FontWeight.bold),
+                                ),
+                              )).toList(),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          SessionAvatar(name: "You (${widget.topic.myRole})", emoji: '👤', animation: _pulseMe, isLarge: false),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                if (_currentHint != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                    child: HintBox(hint: _currentHint!, onClose: () => setState(() => _currentHint = null)),
+                  ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 24),
+                  child: Listener(
+                    onPointerDown: _busy ? null : _onMicDown,
+                    onPointerUp: _busy ? null : _onMicUp,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        if (_recording) const PulseRipple(),
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: _recording ? 94 : 82, height: _recording ? 94 : 82,
+                          decoration: BoxDecoration(
+                            gradient: _recording ? const LinearGradient(colors: [Colors.red, Colors.redAccent]) : AppTheme.primaryGradient,
+                            shape: BoxShape.circle,
+                            boxShadow: [BoxShadow(color: (_recording ? Colors.red : AppTheme.primary).withOpacity(0.3), blurRadius: 15, offset: const Offset(0, 6))],
+                          ),
+                          child: Icon(_busy ? Icons.hourglass_empty_rounded : (_recording ? Icons.stop_rounded : Icons.mic_rounded), color: Colors.white, size: 36),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

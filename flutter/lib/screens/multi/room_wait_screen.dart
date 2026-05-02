@@ -9,6 +9,7 @@ import '../../models/voice_room.dart';
 import '../../services/auth_service.dart';
 import '../../services/local_notification_service.dart';
 import '../../services/settings_store.dart';
+import '../../services/app_localizations.dart';
 import '../../theme/app_theme.dart';
 import 'room_topic_screen.dart';
 
@@ -44,7 +45,7 @@ class _RoomWaitScreenState extends State<RoomWaitScreen> with SingleTickerProvid
     super.initState();
     _max = widget.room.maxPlayers;
     _dots = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200))..repeat();
-    final me = AuthService.instance.currentUser?.displayName ?? 'Вы';
+    final me = AuthService.instance.currentUser?.displayName ?? 'User';
     _slots.add(_Slot(name: me, isBot: false, ready: false));
     _fillTimer = Timer.periodic(const Duration(milliseconds: 1400), (_) => _tickFill());
   }
@@ -93,7 +94,7 @@ class _RoomWaitScreenState extends State<RoomWaitScreen> with SingleTickerProvid
   }
 
   void _userReady() {
-    final me = AuthService.instance.currentUser?.displayName ?? 'Вы';
+    final me = AuthService.instance.currentUser?.displayName ?? 'User';
     final i = _slots.indexWhere((s) => !s.isBot && s.name == me);
     if (i < 0) return;
     setState(() => _slots[i].ready = true);
@@ -114,7 +115,7 @@ class _RoomWaitScreenState extends State<RoomWaitScreen> with SingleTickerProvid
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Команда готова — ${widget.room.title}'),
+          content: Text('${AppLocalizations.of(context, 'lobby_team_ready')} — ${widget.room.title}'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -137,7 +138,9 @@ class _RoomWaitScreenState extends State<RoomWaitScreen> with SingleTickerProvid
 
   @override
   Widget build(BuildContext context) {
-    final me = AuthService.instance.currentUser?.displayName ?? 'Вы';
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final me = AuthService.instance.currentUser?.displayName ?? 'User';
     final allReady = _full && _slots.isNotEmpty && _slots.every((s) => s.ready);
     _Slot? meSlot;
     for (final s in _slots) {
@@ -150,172 +153,230 @@ class _RoomWaitScreenState extends State<RoomWaitScreen> with SingleTickerProvid
     final r = widget.room;
 
     return Scaffold(
-      backgroundColor: AppTheme.background,
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            pinned: true,
-            expandedHeight: 168,
-            backgroundColor: r.accent,
-            foregroundColor: Colors.white,
-            iconTheme: const IconThemeData(color: Colors.white),
-            flexibleSpace: FlexibleSpaceBar(
-              titlePadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
-              title: Text(
-                r.title,
-                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17, shadows: [Shadow(blurRadius: 8, color: Colors.black26)]),
-              ),
-              background: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          r.accent,
-                          Color.lerp(r.accent, Colors.black, 0.22)!,
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: isDark 
+              ? [const Color(0xFF1A1A1A), const Color(0xFF121212)]
+              : [const Color(0xFFF9FAFB), const Color(0xFFF3F4F6)],
+          ),
+        ),
+        child: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            SliverAppBar(
+              pinned: true,
+              expandedHeight: 200,
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              flexibleSpace: FlexibleSpaceBar(
+                background: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [
+                            r.accent,
+                            Color.lerp(r.accent, Colors.black, 0.3)!,
+                          ],
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      right: -20,
+                      bottom: -20,
+                      child: Opacity(
+                        opacity: 0.2,
+                        child: Text(r.emoji, style: const TextStyle(fontSize: 180)),
+                      ),
+                    ),
+                    Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const SizedBox(height: 40),
+                          Text(r.emoji, style: const TextStyle(fontSize: 64)),
+                          const SizedBox(height: 8),
+                          Text(
+                            r.title,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 24,
+                              shadows: [Shadow(blurRadius: 10, color: Colors.black26)],
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                  ),
-                  Positioned(
-                    right: -12,
-                    top: 24,
-                    child: Text(r.emoji, style: const TextStyle(fontSize: 96, shadows: [Shadow(blurRadius: 16, color: Colors.black12)])),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-            sliver: SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    r.subtitle,
-                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: AppTheme.textSecondary, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Icon(Icons.people_outline_rounded, size: 18, color: AppTheme.primary.withValues(alpha: 0.9)),
-                      const SizedBox(width: 6),
-                      Text(
-                        '${r.onlineCount} онлайн в похожих комнатах · до $_max в вашей',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppTheme.textSecondary, fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 20),
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(color: Colors.black.withValues(alpha: 0.06), blurRadius: 12, offset: const Offset(0, 4)),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: r.accent.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(r.levelTag, style: TextStyle(fontWeight: FontWeight.w800, color: r.accent, fontSize: 12)),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            _full ? 'Нажмите «Готов» — затем введите тему сессии' : 'Подбираем участников в комнату…',
-                            style: const TextStyle(fontWeight: FontWeight.w700, height: 1.35),
-                          ),
-                        ),
-                        if (!_full)
-                          AnimatedBuilder(
-                            animation: _dots,
-                            builder: (_, __) {
-                              final i = (_dots.value * 3).floor() % 3;
-                              return Text(['·  ', '·· ', '···'][i], style: TextStyle(color: r.accent, fontWeight: FontWeight.w900));
-                            },
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            sliver: SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, i) {
-                  final s = _slots[i];
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Material(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      elevation: 0,
-                      shadowColor: Colors.transparent,
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                        leading: CircleAvatar(
-                          radius: 24,
-                          backgroundColor: s.isBot ? const Color(0xFFF3F4F6) : r.accent.withValues(alpha: 0.2),
-                          child: Text(
-                            s.name.isNotEmpty ? s.name[0].toUpperCase() : '?',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 18,
-                              color: s.isBot ? AppTheme.textSecondary : r.accent,
-                            ),
-                          ),
-                        ),
-                        title: Text(s.name, style: const TextStyle(fontWeight: FontWeight.w800)),
-                        subtitle: s.isBot
-                            ? Text('Бот', style: TextStyle(color: AppTheme.textSecondary.withValues(alpha: 0.85), fontSize: 12))
-                            : const Text('Вы', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
-                        trailing: Icon(
-                          s.ready ? Icons.check_circle_rounded : Icons.pending_outlined,
-                          color: s.ready ? AppTheme.primary : AppTheme.textSecondary,
-                          size: 26,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-                childCount: _slots.length,
-              ),
-            ),
-          ),
-          if (!_full)
-            const SliverPadding(
-              padding: EdgeInsets.all(32),
-              sliver: SliverToBoxAdapter(child: Center(child: CircularProgressIndicator())),
-            ),
-          if (_full && !allReady)
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-              sliver: SliverToBoxAdapter(
-                child: FilledButton(
-                  onPressed: userReady ? null : _userReady,
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(52),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  child: Text(userReady ? 'Вы готовы — ждём остальных' : 'Готов — задать тему', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                  ],
                 ),
               ),
             ),
-        ],
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (r.aiJudgeEnabled)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.gavel_rounded, color: Colors.amber, size: 16),
+                            const SizedBox(width: 8),
+                            Text(
+                              '${AppLocalizations.of(context, 'judge_personality')}: ${AppLocalizations.of(context, 'personality_${r.judgePersonality.toLowerCase()}')}',
+                              style: const TextStyle(color: Colors.amber, fontWeight: FontWeight.w800, fontSize: 12),
+                            ),
+                          ],
+                        ),
+                      ),
+                    Text(
+                      r.subtitle,
+                      style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      AppLocalizations.of(context, 'lobby_waiting'),
+                      style: const TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, i) {
+                    final s = _slots[i];
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: theme.cardColor,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: AppTheme.premiumShadow,
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.all(12),
+                          leading: Container(
+                            width: 50,
+                            height: 50,
+                            decoration: BoxDecoration(
+                              gradient: s.isBot 
+                                ? null 
+                                : AppTheme.primaryGradient,
+                              color: s.isBot ? theme.dividerColor.withOpacity(0.1) : null,
+                              shape: BoxShape.circle,
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              s.name.isNotEmpty ? s.name[0].toUpperCase() : '?',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 20,
+                                color: s.isBot ? AppTheme.textSecondary : Colors.white,
+                              ),
+                            ),
+                          ),
+                          title: Text(s.name, style: const TextStyle(fontWeight: FontWeight.w800)),
+                          subtitle: Text(
+                            s.isBot ? AppLocalizations.of(context, 'lobby_bot') : AppLocalizations.of(context, 'lobby_you'),
+                            style: const TextStyle(fontSize: 12, color: AppTheme.textSecondary),
+                          ),
+                          trailing: AnimatedContainer(
+                            duration: const Duration(milliseconds: 300),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: s.ready ? AppTheme.primary.withOpacity(0.1) : Colors.transparent,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: s.ready ? AppTheme.primary : theme.dividerColor.withOpacity(0.2),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (s.ready) const Icon(Icons.check_rounded, color: AppTheme.primary, size: 14),
+                                if (s.ready) const SizedBox(width: 4),
+                                Text(
+                                  s.ready ? AppLocalizations.of(context, 'lobby_status_ready') : AppLocalizations.of(context, 'lobby_status_waiting'),
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w900,
+                                    color: s.ready ? AppTheme.primary : AppTheme.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                  childCount: _slots.length,
+                ),
+              ),
+            ),
+            if (!_full)
+              const SliverPadding(
+                padding: EdgeInsets.all(40),
+                sliver: SliverToBoxAdapter(child: Center(child: CircularProgressIndicator())),
+              ),
+            if (_full && !allReady)
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+                sliver: SliverToBoxAdapter(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: userReady ? null : AppTheme.primaryGradient,
+                      color: userReady ? theme.cardColor : null,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: userReady ? null : [
+                        BoxShadow(
+                          color: AppTheme.primary.withOpacity(0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    child: ElevatedButton(
+                      onPressed: userReady ? null : _userReady,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.transparent,
+                        shadowColor: Colors.transparent,
+                        minimumSize: const Size.fromHeight(56),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      child: Text(
+                        userReady ? AppLocalizations.of(context, 'lobby_waiting_btn') : AppLocalizations.of(context, 'lobby_ready_btn'),
+                        style: TextStyle(
+                          color: userReady ? AppTheme.textSecondary : Colors.white,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
