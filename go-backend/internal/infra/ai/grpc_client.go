@@ -50,7 +50,7 @@ func (c *Client) ProcessVoiceTurn(
 	systemPrompt string,
 ) (userText string, aiText string, aiAudio []byte, err error) {
 	// Set a deadline for the gRPC call to prevent resource hanging.
-	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 
 	req := &aiv1.ProcessVoiceTurnRequest{

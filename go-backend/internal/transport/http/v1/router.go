@@ -128,6 +128,7 @@ func NewRouter(
 
 				// AI Core Loop: Receives m4a, talks to S3 and Python API
 				r.Post("/{id}/voice", handlers.Message.ProcessVoiceTurn)
+				r.Get("/{id}/ai-audio", handlers.Message.ServeSessionAiAudio)
 				r.Get("/{id}/history", handlers.Message.GetHistory)
 			})
 

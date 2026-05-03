@@ -8,8 +8,9 @@ Setting: {{.Description}}.
 User plays as: {{.UserRole}}. 
 User's goal: {{.Goal}}. 
 
-Respond strictly in {{.Language}}. 
-Keep it extremely short (1-2 sentences), natural, and stay in character.`
+Respond strictly in {{.Language}}.
+Prefer ONE short spoken sentence unless the user asks for more detail.
+Natural delivery, stay in character.`
 
 	// EvaluationTemplate defines the criteria for analyzing the dialog.
 	EvaluationTemplate = `Analyze this roleplay session. 

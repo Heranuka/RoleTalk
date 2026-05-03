@@ -114,11 +114,14 @@ type SMTP struct {
 
 // MinIO contains S3-compatible storage settings.
 type MinIO struct {
-	Endpoint  string `mapstructure:"endpoint"`
-	AccessKey string `mapstructure:"access_key"`
-	SecretKey string `mapstructure:"secret_key"`
-	Bucket    string `mapstructure:"bucket"`
-	UseSSL    bool   `mapstructure:"use_ssl"`
+	Endpoint       string `mapstructure:"endpoint"`
+	PublicEndpoint string `mapstructure:"public_endpoint"`
+	AccessKey      string `mapstructure:"access_key"`
+	SecretKey      string `mapstructure:"secret_key"`
+	Bucket         string `mapstructure:"bucket"`
+	UseSSL         bool   `mapstructure:"use_ssl"`
+	// Region is the signing region sent to MinIO (e.g. us-east-1). When set, the client skips bucket location HTTP probes.
+	Region string `mapstructure:"region"`
 }
 
 // Postgres contains database connection and pooling settings.
@@ -240,6 +243,9 @@ func loadSensitiveValues(v *viper.Viper, cfg *Config) {
 	cfg.Postgres.Password = v.GetString("POSTGRES_PASSWORD")
 	cfg.Postgres.Database = v.GetString("POSTGRES_DB")
 
+	if pe := strings.TrimSpace(v.GetString("MINIO_PUBLIC_ENDPOINT")); pe != "" {
+		cfg.MinIO.PublicEndpoint = pe
+	}
 	cfg.MinIO.AccessKey = v.GetString("MINIO_ACCESS_KEY")
 	cfg.MinIO.SecretKey = v.GetString("MINIO_SECRET_KEY")
 

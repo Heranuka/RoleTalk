@@ -1,6 +1,6 @@
 # RoleTalk API Configuration
-# This file contains default settings. Sensitive secrets (Passwords, Keys)
-# must be provided via the .env file or environment variables.
+# This file contains default settings for the development environment.
+# Secrets and environment-specific overrides must be provided via the .env file.
 
 env: "development"
 
@@ -9,18 +9,21 @@ app:
   version: "1.0.0"
 
 # HTTP Server Settings
+# Using longer timeouts to accommodate heavy AI processing (STT/LLM/TTS).
 http:
   port: ":8080"
-  read_timeout: "15s"
-  write_timeout: "15s"
+  read_timeout: "120s"
+  write_timeout: "120s"
   idle_timeout: "60s"
   shutdown_timeout: "10s"
 
-# AI gRPC Microservice (Python)
+# AI gRPC Microservice (Python Assistant)
+# Address must match the service name in docker-compose.yml.
 ai:
-  addr: "voice-assistant:50051"
+  addr: "assistant-api:50051"
 
 # LLM Provider (Ollama)
+# host.docker.internal allows the container to reach Ollama running on your macOS.
 ollama:
   url: "http://host.docker.internal:11434"
   model: "qwen2.5:latest"
@@ -28,7 +31,9 @@ ollama:
 # Telemetry and Monitoring (OpenTelemetry + Grafana Stack)
 observability:
   enabled: true
-  otlp_endpoint: "tempo:4317" # OTLP gRPC endpoint
+  # FIX: Routes data through otel-collector instead of sending logs to Tempo.
+  # This resolves the "unknown service opentelemetry.proto.collector.logs.v1.LogsService" error.
+  otlp_endpoint: "otel-collector:4317"
   loki_url: "http://loki:3100/loki/api/v1/push"
   sample_rate: 1.0
 
@@ -82,10 +87,15 @@ rabbitmq:
   dlq_name: "roletalk_dlq"
 
 # S3 Compatible Storage (MinIO)
+# Note: internalAddr (s3) is used by Go, while externalAddr (localhost) is used by Flutter.
 minio:
   endpoint: "s3:9000"
+  # Host:port reachable from Flutter/simulator (not the Docker service name).
+  public_endpoint: "localhost:9000"
   bucket: "roletalk-storage"
   use_ssl: false
+  # Avoids SigV4 region discovery HTTP calls against public_endpoint (broken when API runs in Docker and host is localhost).
+  region: "us-east-1"
 
 # Transactional Email (SMTP)
 smtp:
@@ -99,6 +109,6 @@ client:
 api:
   url: "http://localhost:8080"
 
-# Logging Level (debug, info, warn, error)
+# Logging Settings (debug, info, warn, error)
 logging:
   level: "debug"

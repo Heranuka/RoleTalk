@@ -12,8 +12,12 @@ import (
 
 // StorageProvider defines the behavior for persistent binary data storage (S3/MinIO).
 type StorageProvider interface {
-	// Upload stores an object and returns its public or presigned URL.
+	// Upload stores an object and returns the bucket-relative storage key (object key).
 	Upload(ctx context.Context, bucket, filename string, src io.Reader) (string, error)
+	// GetURL returns a short-lived HTTP(S) URL for the given object key, for client playback or download.
+	GetURL(ctx context.Context, objectPath string) (string, error)
+	// Load streams an object stored under the given key.
+	Load(ctx context.Context, path string) (io.ReadCloser, error)
 }
 
 // MessageService defines the behavior for persisting and retrieving dialog history.

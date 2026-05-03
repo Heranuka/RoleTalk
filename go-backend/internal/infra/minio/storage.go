@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -24,22 +25,50 @@ var tracer = otel.Tracer("internal/infra/minio")
 
 // Storage handles file operations with a MinIO/S3 bucket with integrated observability.
 type Storage struct {
-	client     *minio.Client
+	client *minio.Client
+
 	bucketName string
-	log        *zap.SugaredLogger
+
+	// accessKey and secretKey are used to build a short-lived presigning client against publicEndpoint.
+	accessKey string
+	secretKey string
+
+	// publicEndpoint is the host:port (or DNS name) clients use to fetch objects; it must match the Host in presigned requests.
+	publicEndpoint string
+
+	// presignSecure is whether presigned URLs use HTTPS (must match how clients open the link).
+	presignSecure bool
+
+	// signingRegion is the AWS SigV4 region used for signing; it avoids network calls to infer region when minting URLs.
+	signingRegion string
+
+	log *zap.SugaredLogger
 }
 
-// NewStorage initializes a MinIO client, ensures the target bucket exists, and sets up logging.
-func NewStorage(ctx context.Context, endpoint, accessKey, secretKey, bucketName string, useSSL bool, log *zap.SugaredLogger) (*Storage, error) {
+// NewStorage initializes a MinIO client, ensures the target bucket exists, and stores settings for presigned GET URLs.
+// endpoint is the address the application uses to reach MinIO (e.g. s3:9000 in Docker).
+// publicEndpoint is the address embedded in presigned URLs for external clients (e.g. localhost:9000 on a dev machine).
+func NewStorage(ctx context.Context, endpoint, publicEndpoint, accessKey, secretKey, bucketName string, useSSL bool, signingRegion string, log *zap.SugaredLogger) (*Storage, error) {
+	publicEndpoint = strings.TrimSpace(publicEndpoint)
+	if publicEndpoint == "" {
+		return nil, fmt.Errorf("minio public endpoint is required")
+	}
+	signingRegion = strings.TrimSpace(signingRegion)
+	if signingRegion == "" {
+		signingRegion = "us-east-1"
+	}
+
 	opts := &minio.Options{
 		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
 		Secure: useSSL,
+		Region: signingRegion,
 	}
 	client, err := minio.New(endpoint, opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init minio client: %w", err)
 	}
 
+	// Ensure bucket exists
 	exists, err := client.BucketExists(ctx, bucketName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check bucket %s: %w", bucketName, err)
@@ -51,10 +80,42 @@ func NewStorage(ctx context.Context, endpoint, accessKey, secretKey, bucketName 
 	}
 
 	return &Storage{
-		client:     client,
-		bucketName: bucketName,
-		log:        log,
+		client:         client,
+		bucketName:     bucketName,
+		accessKey:      accessKey,
+		secretKey:      secretKey,
+		publicEndpoint: publicEndpoint,
+		presignSecure:  useSSL,
+		signingRegion:  signingRegion,
+		log:            log,
 	}, nil
+}
+
+// GetURL returns a time-limited presigned GET URL for objectPath.
+//
+// Signing uses a separate MinIO client bound to publicEndpoint so the Authorization header matches the Host
+// the mobile client contacts, avoiding SignatureDoesNotMatch when the app uses a different hostname than the server.
+func (s *Storage) GetURL(ctx context.Context, objectPath string) (string, error) {
+	if objectPath == "" {
+		return "", nil
+	}
+
+	signer, err := minio.New(s.publicEndpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(s.accessKey, s.secretKey, ""),
+		Secure: s.presignSecure,
+		Region: s.signingRegion,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to create URL signer: %w", err)
+	}
+
+	expires := time.Minute * 15
+	presignedURL, err := signer.PresignedGetObject(ctx, s.bucketName, objectPath, expires, nil)
+	if err != nil {
+		return "", fmt.Errorf("minio.PresignedGetObject: %w", err)
+	}
+
+	return presignedURL.String(), nil
 }
 
 // Upload stores a file in a specific subdirectory and returns the object key.
@@ -126,20 +187,6 @@ func (s *Storage) Delete(ctx context.Context, path string) error {
 		return fmt.Errorf("s3 delete: %w", err)
 	}
 	return nil
-}
-
-// GetURL возвращает временную ссылку на файл (работает 15 минут)
-func (s *Storage) GetURL(ctx context.Context, objectPath string) (string, error) {
-	if objectPath == "" {
-		return "", nil
-	}
-
-	expires := time.Minute * 15
-	presignedURL, err := s.client.PresignedGetObject(ctx, s.bucketName, objectPath, expires, nil)
-	if err != nil {
-		return "", fmt.Errorf("minio.PresignedGetObject: %w", err)
-	}
-	return presignedURL.String(), nil
 }
 
 // HealthCheck verifies if the MinIO server is reachable.

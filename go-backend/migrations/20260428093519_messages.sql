@@ -4,7 +4,7 @@ CREATE TABLE messages (
                           session_id UUID REFERENCES practice_sessions(id) ON DELETE CASCADE,
                           sender_role VARCHAR(20),
                           text_content TEXT,
-                          audio_path TEXT,
+                          audio_url TEXT,
                           created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

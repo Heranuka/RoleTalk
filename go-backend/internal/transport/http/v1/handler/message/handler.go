@@ -4,6 +4,7 @@ package message
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -85,7 +86,7 @@ func (h *Handler) ProcessVoiceTurn(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = file.Close() }()
 
 	// 3. Execute AI orchestration service
-	userText, aiText, aiAudioURL, err := h.service.ProcessVoiceTurn(ctx, userID, sessionID, practiceLang, file)
+	userText, aiText, fullURL, audioObjectKey, err := h.service.ProcessVoiceTurn(ctx, userID, sessionID, practiceLang, file)
 	if err != nil {
 		h.handleError(ctx, w, err, "process_voice_turn")
 		return
@@ -93,13 +94,16 @@ func (h *Handler) ProcessVoiceTurn(w http.ResponseWriter, r *http.Request) {
 
 	// 4. Construct and send response
 	// Note: In production, IDs should be returned from the service layer persisted in DB.
-	resp := voiceTurnResponse{
-		UserText: userText,
-		AIResponse: messageResponse{
-			ID:          uuid.New(),
-			SenderRole:  "ai",
-			TextContent: &aiText,
-			AudioURL:    &aiAudioURL,
+	resp := map[string]any{
+		"user_text": userText,
+		"ai_text":   aiText,
+		// audio_object_key: same-origin authenticated GET avoids MinIO host mismatch (e.g. Android emulator vs localhost:9000).
+		"audio_object_key": audioObjectKey,
+		"ai_audio_url":     fullURL,
+		"ai_response": map[string]any{
+			"role":      "ai",
+			"text":      aiText,
+			"audio_url": fullURL,
 		},
 	}
 
@@ -125,6 +129,52 @@ func (h *Handler) GetHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = render.OK(w, toMessageListResponse(messages))
+}
+
+// ServeSessionAiAudio streams a WAV artifact from object storage via the API host so mobile clients avoid presigned localhost URLs.
+func (h *Handler) ServeSessionAiAudio(w http.ResponseWriter, r *http.Request) {
+	ctx, span := tracer.Start(r.Context(), "Handler.ServeSessionAiAudio")
+	defer span.End()
+
+	sessionID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		_ = render.Fail(w, http.StatusBadRequest, ErrInvalidSessionID)
+		return
+	}
+
+	userID, ok := middleware.UserIDFromContext(ctx)
+	if !ok {
+		_ = render.Fail(w, http.StatusUnauthorized, errors.New("unauthorized"))
+		return
+	}
+
+	objectKey := r.URL.Query().Get("object_key")
+	if objectKey == "" {
+		_ = render.FailMessage(w, http.StatusBadRequest, "missing object_key")
+		return
+	}
+
+	stream, err := h.service.StreamValidatedSessionAIWave(ctx, userID, sessionID, objectKey)
+	if err != nil {
+		switch {
+		case errors.Is(err, serviceai.ErrInvalidStoredObjectPath):
+			_ = render.Fail(w, http.StatusBadRequest, err)
+
+		case errors.Is(err, serviceai.ErrAISessionPlaybackForbidden):
+			_ = render.Fail(w, http.StatusForbidden, err)
+
+		default:
+			h.handleError(ctx, w, err, "stream_session_ai_audio")
+		}
+		return
+	}
+	defer func() { _ = stream.Close() }()
+
+	w.Header().Set("Content-Type", "audio/wav")
+	if _, cerr := io.Copy(w, stream); cerr != nil {
+		log := logger.FromContext(ctx, h.log)
+		log.Warnw("stream ai audio truncate", "error", cerr)
+	}
 }
 
 // handleError maps business errors to HTTP responses and records system failures in tracing.
